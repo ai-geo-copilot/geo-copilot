@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/deepseek-diagnosis.schema.json",
+  "title": "DeepSeekDiagnosis",
+  "type": "object",
+  "required": ["geo_score", "score_breakdown", "executive_summary", "issues", "priority_actions", "asset_drafts", "unknowns"],
+  "properties": {
+    "geo_score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "score_breakdown": { "type": "object" },
+    "executive_summary": { "type": "string" },
+    "issues": { "type": "array" },
+    "priority_actions": { "type": "array" },
+    "asset_drafts": { "type": "array" },
+    "unknowns": { "type": "array" }
+  }
+}

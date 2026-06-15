@@ -1,0 +1,8 @@
+apps/api/**                  @role-a
+apps/api/app/page_evidence/** @role-b
+apps/api/app/rag/**          @role-c
+apps/api/app/llm/**          @role-d
+apps/web/**                  @role-e
+infra/**                     @role-a
+docs/**                      @role-a @role-c
+infra/migrations/**          @role-a

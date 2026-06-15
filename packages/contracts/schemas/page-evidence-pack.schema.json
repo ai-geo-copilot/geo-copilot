@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/page-evidence-pack.schema.json",
+  "title": "PageEvidencePack",
+  "type": "object",
+  "required": ["metadata", "crawl_access", "schema", "content_blocks"],
+  "properties": {
+    "metadata": { "type": "object" },
+    "crawl_access": { "type": "object" },
+    "schema": { "type": "object" },
+    "content_blocks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["evidence_ref", "text"],
+        "properties": {
+          "evidence_ref": { "type": "string" },
+          "text": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/retrieved-method-pack.schema.json",
+  "title": "RetrievedMethodPack",
+  "type": "object",
+  "required": ["retrieval_query", "chunks"],
+  "properties": {
+    "retrieval_query": { "type": "object" },
+    "chunks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["method_ref", "title", "text", "why_selected"],
+        "properties": {
+          "method_ref": { "type": "string" },
+          "title": { "type": "string" },
+          "text": { "type": "string" },
+          "why_selected": { "type": "string" }
+        }
+      }
+    }
+  }
+}
