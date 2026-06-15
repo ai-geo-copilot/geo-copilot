@@ -133,6 +133,9 @@
 - 已创建远端仓库 `https://github.com/ai-geo-copilot/geo-copilot`
 - 本地 git 仓库已初始化为 `main`
 - remote `origin` 指向 `https://github.com/ai-geo-copilot/geo-copilot.git`
+- 初始 scaffold 已推送到 `origin/main`
+- 已从 git 中移除 TypeScript 生成文件 `apps/web/tsconfig.tsbuildinfo`
+- `.gitignore` 已补充 `*.tsbuildinfo`
 
 ## 4. 已验证
 
