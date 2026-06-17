@@ -52,3 +52,16 @@ def test_parse_html_ignores_empty_selectolax_blocks() -> None:
 
     assert [block.text for block in parsed.content_blocks] == ["第一段内容", "第二段内容"]
     assert "第一段内容" in parsed.clean_markdown
+
+
+def test_parse_html_collects_extraction_warnings_for_suspicious_instructions() -> None:
+    html = (FIXTURES_DIR / "prompt_injection_hidden_comment.html").read_text(encoding="utf-8")
+
+    parsed = parse_html(html, "https://example.com/injected")
+
+    assert [warning.code for warning in parsed.extraction_warnings] == [
+        "metadata_instruction",
+        "html_comment_instruction",
+        "hidden_text_instruction",
+    ]
+    assert all(warning.evidence_ref.startswith("extraction.warnings[") for warning in parsed.extraction_warnings)

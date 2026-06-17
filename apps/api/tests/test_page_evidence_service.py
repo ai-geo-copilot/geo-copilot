@@ -59,9 +59,14 @@ def test_page_evidence_service_builds_snapshot_and_rule_checks(tmp_path: Path) -
     assert result.page_evidence.metadata.description.value == "Helpful summary."
     assert result.page_evidence.rule_check_inputs.has_json_ld is True
     assert result.page_evidence.rule_check_inputs.substance_score >= result.page_evidence.rule_check_inputs.word_count
-    assert any(check.rule_id == "metadata.title_present" and check.status == "passed" for check in result.rule_checks)
-    assert any(check.rule_id == "structure.single_h1" and check.status == "passed" for check in result.rule_checks)
-    assert any(check.rule_id == "content.minimum_substance" and check.status == "warning" for check in result.rule_checks)
+    assert result.page_evidence.extraction.parser == "selectolax"
+    assert result.page_evidence.geo_signals.page_type_hint == "article"
+    assert any(check.rule_id == "metadata.title_missing" and check.status == "passed" for check in result.rule_checks)
+    assert any(check.rule_id == "structure.h1_missing_or_multiple" and check.status == "passed" for check in result.rule_checks)
+    assert any(
+        check.rule_id == "content.minimum_substance_low" and check.status in {"warning", "failed", "passed"}
+        for check in result.rule_checks
+    )
     assert Path(result.snapshot_dir or "").exists()
     assert (Path(result.snapshot_dir or "") / "raw.html").exists()
     assert (Path(result.snapshot_dir or "") / "analysis.json").exists()

@@ -24,6 +24,7 @@
 | 结构化数据 | `extruct` | 只抽 JSON-LD 忽略其他结构化信号 |
 | 存储 | `data/analyses/{id}` 文件快照 | 当前阶段强依赖数据库 |
 | 测试 | `pytest` + fixture HTML | 只做手工临时验证 |
+| GEO 抽象 | `PageContentProfile` builder + deterministic rules | 让 LLM 先替代页面理解 |
 | 方法选择 | 种子方法卡片 + deterministic selector | 直接上 pgvector / Qdrant |
 | 诊断模型 | DeepSeek JSON Output（后续阶段） | 让模型直接抓网页 |
 
@@ -136,7 +137,31 @@
 
 没有引用能力，后面的 RuleChecks、MethodSelector 和 DeepSeekDiagnosis 都无法可追溯。
 
-## 6. 存储与调试建议
+## 6. GEO 抽象输出建议
+
+`PageEvidencePack` 负责“页面有什么”，`PageContentProfile` 负责“这些事实对 GEO 意味着什么”。二者不能混成一份自由文本 prompt。
+
+`PageContentProfile v1` 建议包含：
+
+- `page_type`：article、product、docs、landing、comparison、home、unknown。
+- `primary_entity`：实体名称、类型、别名和 evidence refs。
+- `content_outline`：标题层级、区块类型、summary 和 evidence refs。
+- `answer_units`：definition、fact、comparison、procedure、faq、quote。
+- `claim_candidates` 与 `evidence_candidates`：主张、证据、support label、source URL。
+- `statistics`：数值、单位、时间、口径、来源。
+- `structured_data_profile`：schema 类型、属性完整性、visible alignment。
+- `boilerplate_metrics`：main content confidence、boilerplate ratio、first-screen summary。
+- `selection_readiness` 与 `absorption_readiness`：分数只作诊断辅助，不作真实排名承诺。
+- `prompt_injection_risk`：隐藏指令、comments、meta/script/style 等风险标记。
+
+实现策略：
+
+- 先用确定性 heuristic 和 fixture 固化字段口径。
+- 所有抽象字段必须保留 `evidence_ref`。
+- claim/evidence 初期可以粗粒度匹配，规则口径要保守。
+- 不把 `clean.md` 全文直接当作模型事实来源。
+
+## 7. 存储与调试建议
 
 当前建议：
 
@@ -157,9 +182,9 @@ data/analyses/{analysis_id}/
 
 后续如果确实需要历史查询、共享状态或多用户，再引入数据库持久化。
 
-## 7. 方法库技术路线
+## 8. 方法库技术路线
 
-### 7.1 当前阶段
+### 8.1 当前阶段
 
 推荐：
 
@@ -175,7 +200,7 @@ data/analyses/{analysis_id}/
 - 可解释性强。
 - 调试和人工 review 更直接。
 
-### 7.2 后续阶段
+### 8.2 后续阶段
 
 当方法卡片规模增长并且 golden queries 证明召回不稳定时，再升级到：
 
@@ -186,12 +211,13 @@ data/analyses/{analysis_id}/
 
 当前不把这条链路写成 M1 的技术前置。
 
-## 8. DeepSeek 接入建议
+## 9. DeepSeek 接入建议
 
 DeepSeek 只在后续阶段接入，且只消费结构化输入：
 
 ```text
 PAGE_EVIDENCE
+PAGE_CONTENT_PROFILE
 RULE_CHECKS
 GEO_METHODS
 OUTPUT_SCHEMA
@@ -208,12 +234,14 @@ OUTPUT_SCHEMA
 不推荐：
 
 - 把 raw HTML 直接给模型。
+- 把 HTML comments、隐藏 DOM、script/style、站点声明型自由文本直接给模型。
 - 用模型替代规则引擎。
 - 让模型自行搜索网页或挑选事实。
+- 接受没有 `evidence_ref` 或 `method_ref` 的诊断项。
 
-## 9. 可选外部工具的正确位置
+## 10. 可选外部工具的正确位置
 
-### 9.1 Dify / FastGPT / RAGFlow
+### 10.1 Dify / FastGPT / RAGFlow
 
 结论：
 
@@ -225,7 +253,7 @@ OUTPUT_SCHEMA
 - 它们擅长工作流、RAG 或 agent 外壳。
 - 本项目的核心价值在于 Page Evidence、RuleChecks、MethodSelector 和可追溯诊断，而不是通用聊天壳。
 
-### 9.2 Jina Reader / Firecrawl / Playwright
+### 10.2 Jina Reader / Firecrawl / Playwright
 
 结论：
 
@@ -240,7 +268,7 @@ Safe static fetch
 -> 证明不足时再考虑 fallback provider
 ```
 
-## 10. 当前不建议采用的实现
+## 11. 当前不建议采用的实现
 
 - `verify=False` 作为默认 TLS 策略。
 - `follow_redirects=True` 后不再手动校验跳转目标。
@@ -248,8 +276,10 @@ Safe static fetch
 - 一开始就引入浏览器集群。
 - 一开始就引入向量数据库或复杂 RAG 平台。
 - 只用长 prompt 补偿事实抽取缺失。
+- 用统一 FAQ 模板代替 page-type-aware 的 GEO 诊断。
+- 用单次 AI 搜索截图证明真实 visibility 提升。
 
-## 11. 依赖演进建议
+## 12. 依赖演进建议
 
 ### Phase 1 必需
 
@@ -265,6 +295,7 @@ Safe static fetch
 ### Phase 2 可增
 
 - seed methods 相关数据文件和 selector 逻辑
+- PageContentProfile builder 和相关 schema
 
 ### Phase 3 可增
 
@@ -278,12 +309,13 @@ Safe static fetch
 - `pgvector`
 - 浏览器自动化或外部抓取 provider
 
-## 12. 当前技术决策摘要
+## 13. 当前技术决策摘要
 
 ```text
 Backend: FastAPI + Pydantic
 Fetch: httpx + manual safety checks
 Parse: selectolax + trafilatura + extruct
+GEO Profile: deterministic builder with evidence refs
 Storage: local analysis snapshots first
 Methods: seed cards + deterministic selector first
 LLM: DeepSeek only after evidence and rules are stable

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from urllib.parse import urljoin
 
@@ -10,6 +11,8 @@ from .content_blocks import build_clean_markdown
 from .models import (
     ContentBlock,
     EvidenceValue,
+    ExtractionInfo,
+    ExtractionWarning,
     HeadingEvidence,
     ImageEvidence,
     LinkEvidence,
@@ -21,6 +24,17 @@ from .structured_data import parse_structured_data
 
 _CONTENT_BLOCK_SELECTOR = "p, li, blockquote"
 _HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6"
+_SUSPICIOUS_INSTRUCTION_PHRASES = (
+    "ignore previous instructions",
+    "as an ai assistant",
+    "you must",
+    "do not cite",
+    "follow these instructions",
+    "忽略之前的指令",
+    "作为 ai",
+    "你必须",
+    "不要引用",
+)
 
 
 def _normalize_text(value: str | None) -> str | None:
@@ -46,12 +60,86 @@ class ParsedPage:
         content_blocks: list[ContentBlock],
         clean_markdown: str,
         structured_data,
+        extraction_warnings: list[ExtractionWarning],
     ) -> None:
         self.metadata = metadata
         self.structure = structure
         self.content_blocks = content_blocks
         self.clean_markdown = clean_markdown
         self.structured_data = structured_data
+        self.extraction_warnings = extraction_warnings
+
+    def build_extraction_info(self) -> ExtractionInfo:
+        return ExtractionInfo(
+            clean_markdown_sha256=hashlib.sha256(self.clean_markdown.encode("utf-8")).hexdigest(),
+            warnings=self.extraction_warnings,
+        )
+
+
+def _contains_suspicious_instruction(text: str | None) -> bool:
+    if not text:
+        return False
+    normalized = text.casefold()
+    return any(phrase in normalized for phrase in _SUSPICIOUS_INSTRUCTION_PHRASES)
+
+
+def _append_warning(
+    warnings: list[ExtractionWarning],
+    *,
+    code: str,
+    message: str,
+    raw_text: str,
+) -> None:
+    normalized = _normalize_text(raw_text)
+    if not normalized:
+        return
+    warnings.append(
+        ExtractionWarning(
+            code=code,
+            message=message,
+            evidence_ref=f"extraction.warnings[{len(warnings)}]",
+            snippet_hash=hashlib.sha256(normalized.encode("utf-8")).hexdigest(),
+        )
+    )
+
+
+def _collect_extraction_warnings(html: str, tree: LexborHTMLParser) -> list[ExtractionWarning]:
+    warnings: list[ExtractionWarning] = []
+
+    for node in tree.css("meta[content]"):
+        content = node.attributes.get("content")
+        if _contains_suspicious_instruction(content):
+            _append_warning(
+                warnings,
+                code="metadata_instruction",
+                message="Suspicious AI-directed instruction detected in metadata.",
+                raw_text=content,
+            )
+
+    for comment in re.findall(r"<!--(.*?)-->", html, flags=re.DOTALL):
+        if _contains_suspicious_instruction(comment):
+            _append_warning(
+                warnings,
+                code="html_comment_instruction",
+                message="Suspicious AI-directed instruction detected in HTML comments.",
+                raw_text=comment,
+            )
+
+    hidden_selector = (
+        '[hidden], [style*="display:none"], [style*="display: none"], '
+        '[style*="visibility:hidden"], [style*="visibility: hidden"], [aria-hidden="true"]'
+    )
+    for node in tree.css(hidden_selector):
+        text = _normalize_text(node.text(separator=" ", strip=True))
+        if _contains_suspicious_instruction(text):
+            _append_warning(
+                warnings,
+                code="hidden_text_instruction",
+                message="Suspicious AI-directed instruction detected in hidden text.",
+                raw_text=text,
+            )
+
+    return warnings
 
 
 def parse_html(html: str, base_url: str) -> ParsedPage:
@@ -151,8 +239,15 @@ def parse_html(html: str, base_url: str) -> ParsedPage:
         include_images=False,
         target_language=lang,
     )
+    extraction_warnings = _collect_extraction_warnings(html, tree)
     if clean_markdown is None:
         clean_markdown = build_clean_markdown(content_blocks)
+        _append_warning(
+            extraction_warnings,
+            code="clean_markdown_fallback",
+            message="Trafilatura returned no markdown; fell back to content blocks.",
+            raw_text="content_blocks_fallback",
+        )
 
     metadata = MetadataEvidence(
         title=EvidenceValue(value=title, evidence_ref="metadata.title"),
@@ -172,4 +267,5 @@ def parse_html(html: str, base_url: str) -> ParsedPage:
         content_blocks=content_blocks,
         clean_markdown=clean_markdown.strip(),
         structured_data=parse_structured_data(html, base_url),
+        extraction_warnings=extraction_warnings,
     )

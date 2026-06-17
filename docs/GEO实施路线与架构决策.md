@@ -8,15 +8,31 @@
 
 当前项目应采用：
 
-> Single-URL Page Evidence Pipeline -> RuleChecks -> MethodSelector -> DeepSeek Diagnosis
+> Single-URL Page Evidence Pipeline -> PageContentProfile -> RuleChecks -> MethodSelector -> DeepSeek Diagnosis -> Validator
 
 但当前实现阶段只要求先落地前两段：
 
 > Single-URL Page Evidence Pipeline -> RuleChecks
 
-这不是退缩，而是为了先把事实层做稳。没有高质量页面证据，后面的 MethodSelector、DeepSeek、追问和报告都会变成不稳定的上层建筑。
+这里的 `PageContentProfile` 是目标架构中的 GEO 抽象层；当前不把它作为独立模块前置，但 Page Evidence v1 和 RuleChecks v1 必须为它的字段口径预留空间。没有高质量页面证据，后面的 GEO 抽象、MethodSelector、DeepSeek、追问和报告都会变成不稳定的上层建筑。
 
-## 2. 当前目标架构
+## 2. GEO 模块嵌入原则
+
+所有模块都必须嵌入同一套 GEO 语义，而不是只传递通用网页字段：
+
+| 模块 | 必须承载的 GEO 语义 |
+|---|---|
+| Fetcher / URL Safety | `selection_readiness` 的访问、安全和重定向边界 |
+| Parser / Content Blocks | macro / meso / micro 结构、可复用 answer units 的原始证据 |
+| Structured Data | schema 类型、属性完整性、与可见内容一致性 |
+| PageEvidence Builder | 稳定 `evidence_ref`、字段来源、主内容置信度 |
+| PageContentProfile | `page_type`、`primary_entity`、claim/evidence、selection/absorption readiness |
+| Rule Engine | 将 GEO 维度转成确定性 finding 和 failure_type |
+| MethodSelector | 根据 page_type、failure_type、asset_type、evidence_level 选方法 |
+| DeepSeek Diagnosis | 只基于结构化事实和方法卡片做归纳，不创造事实 |
+| Validator | 校验 `evidence_ref`、`method_ref`、JSON schema 与安全边界 |
+
+## 3. 当前目标架构
 
 ```mermaid
 flowchart TD
@@ -41,27 +57,30 @@ flowchart TD
 - 队列系统。
 - 复杂数据库落库。
 
-## 3. 后续完整架构
+## 4. 后续完整架构
 
 在 Page Evidence v1 稳定后，再按顺序接入：
 
 ```mermaid
 flowchart TD
-  A["PageEvidencePack"] --> B["RuleChecks"]
-  A --> C["MethodSelector"]
-  B --> C
-  C --> D["Selected Method Pack"]
-  A --> E["DeepSeek Diagnosis"]
-  B --> E
-  D --> E
-  E --> F["JSON Validator"]
-  F --> G["Report Builder"]
-  G --> H["Report UI / Follow-up"]
+  A["PageEvidencePack"] --> B["PageContentProfile"]
+  B --> C["RuleChecks"]
+  A --> C
+  B --> D["MethodSelector"]
+  C --> D
+  D --> E["Selected Method Pack"]
+  A --> F["DeepSeek Diagnosis"]
+  B --> F
+  C --> F
+  E --> F
+  F --> G["JSON Validator"]
+  G --> H["Report Builder"]
+  H --> I["Report UI / Follow-up"]
 ```
 
-## 4. 核心决策
+## 5. 核心决策
 
-### 4.1 先完整做 `page_evidence`
+### 5.1 先完整做 `page_evidence`
 
 `apps/api/app/page_evidence` 是当前唯一完整模块优先级。理由已经被代码现状和开发状态共同证明：
 
@@ -71,7 +90,7 @@ flowchart TD
 
 因此当前不应把主精力转到 DeepSeek、RAG 或复杂前端。
 
-### 4.2 抓取层采用“自控安全边界 + 成熟解析库”
+### 5.2 抓取层采用“自控安全边界 + 成熟解析库”
 
 当前推荐策略：
 
@@ -97,7 +116,7 @@ URL safety 自研
 - `trafilatura` 负责 clean markdown / main content extraction。
 - 解析栈按 `selectolax -> extruct -> trafilatura` 的顺序增量接入，service 与 schema 尽量保持稳定。
 
-### 4.3 Page Evidence v1 默认静态 HTML，不默认浏览器
+### 5.3 Page Evidence v1 默认静态 HTML，不默认浏览器
 
 当前不把 Playwright 或外部抓取服务设为默认路径。
 
@@ -112,7 +131,7 @@ URL safety 自研
 - 真实样本反复出现“静态 HTML 主体为空，但浏览器可见正文存在”的情况。
 - 这种失败已经影响 Page Evidence v1 的目标样本覆盖率。
 
-### 4.4 Page Evidence v1 先落调试快照，不先依赖数据库
+### 5.4 Page Evidence v1 先落调试快照，不先依赖数据库
 
 当前决定：
 
@@ -138,7 +157,7 @@ data/analyses/{analysis_id}/
 
 - 需要跨分析查询、历史对比、用户级持久化或多实例共享状态时，再引入数据库主存储。
 
-### 4.5 MethodSelector 先于复杂 RAG
+### 5.5 MethodSelector 先于复杂 RAG
 
 当前决定：
 
@@ -167,12 +186,12 @@ data/analyses/{analysis_id}/
 - metadata filter + 关键词召回已无法稳定命中 golden queries。
 - 需要更强语义召回且有明确评估基线。
 
-### 4.6 DeepSeek 放在事实与方法之后
+### 5.6 DeepSeek 放在事实、GEO 抽象与方法之后
 
 DeepSeek 的正确位置是：
 
 ```text
-PageEvidencePack + RuleChecks + Selected Methods -> DeepSeek Diagnosis
+PageEvidencePack + PageContentProfile + RuleChecks + Selected Methods -> DeepSeek Diagnosis
 ```
 
 不推荐的路径：
@@ -187,7 +206,7 @@ PageEvidencePack + RuleChecks + Selected Methods -> DeepSeek Diagnosis
 - 当前主链路先不引入第二次模型调用。
 - 模型应当消费已经整理好的事实和方法，而不是替代事实层。
 
-### 4.7 当前先同步执行，不引入外部队列
+### 5.7 当前先同步执行，不引入外部队列
 
 当前 `POST /api/analyses` 可以先同步执行或使用轻量 background task。
 
@@ -198,9 +217,9 @@ PageEvidencePack + RuleChecks + Selected Methods -> DeepSeek Diagnosis
 
 在这些信号出现前，不引入消息队列。
 
-## 5. 模块边界
+## 6. 模块边界
 
-### 5.1 `apps/api/app/page_evidence`
+### 6.1 `apps/api/app/page_evidence`
 
 当前建议目录：
 
@@ -226,6 +245,7 @@ page_evidence/
 - `PageEvidencePack` 构建。
 - `RuleChecks` 生成。
 - 快照落盘。
+- 为后续 `PageContentProfile` 提供 page type、entity、claim/evidence、structure、schema alignment 的稳定原始信号。
 
 当前内部设计约束：
 
@@ -233,7 +253,32 @@ page_evidence/
 - `service.py` 继续作为编排层，不感知 `selectolax` 具体选择器细节。
 - `structured_data.py` 统一承接 `extruct` 输出，并向 `PageEvidencePack` 映射稳定 evidence refs。
 
-### 5.2 `apps/api/app/methods`
+### 6.2 `apps/api/app/page_profile` 或 `page_evidence/abstraction.py`
+
+后续建议目录：
+
+```text
+page_profile/
+  models.py
+  builder.py
+```
+
+或在早期以 `page_evidence/abstraction.py` 形式存在。
+
+职责：
+
+- 从 `PageEvidencePack` 生成 `PageContentProfile`。
+- 识别 `page_type`、`primary_entity`、`search_intent`。
+- 产出 `answer_units`、`claim_candidates`、`evidence_candidates`、`statistics`。
+- 计算 `selection_readiness` 与 `absorption_readiness` 的输入信号。
+
+当前约束：
+
+- 不用 DeepSeek 生成该层事实。
+- 不把 raw HTML、隐藏文本或 comments 作为可信输入。
+- 每个抽象字段都必须能回到 `evidence_ref`。
+
+### 6.3 `apps/api/app/methods`
 
 后续目录建议：
 
@@ -250,7 +295,7 @@ methods/
 - 根据页面问题选择相关方法。
 - 输出稳定 `method_ref`。
 
-### 5.3 `apps/api/app/diagnosis`
+### 6.4 `apps/api/app/diagnosis`
 
 后续目录建议：
 
@@ -269,7 +314,7 @@ diagnosis/
 - schema 校验。
 - 无效 JSON 重试与降级。
 
-### 5.4 `apps/api/app/reports`
+### 6.5 `apps/api/app/reports`
 
 职责：
 
@@ -277,7 +322,7 @@ diagnosis/
 - 区分事实、推断和未知项。
 - 后续为前端提供 evidence/method 展开视图。
 
-## 6. Page Evidence v1 目标
+## 7. Page Evidence v1 目标
 
 必须完成：
 
@@ -290,33 +335,34 @@ diagnosis/
 - 并发抓取 robots.txt、sitemap.xml、llms.txt、llms-full.txt。
 - 为字段和内容块生成稳定 `evidence_ref`。
 - 输出基础规则报告。
+- 为后续 GEO 抽象保留主内容置信度、schema 类型、结构层级、claim/evidence 线索。
 
-## 7. 升级触发条件
+## 8. 升级触发条件
 
-### 7.1 何时加数据库
+### 8.1 何时加数据库
 
 - 需要持久保存分析历史。
 - 需要跨分析查询或聚合。
 - 需要多用户、多实例共享状态。
 
-### 7.2 何时加 pgvector
+### 8.2 何时加 pgvector
 
 - 方法卡片规模增长到手工 selector 明显失效。
 - 已有 golden queries 证明当前召回不足。
 - 需要语义检索而不是简单规则过滤。
 
-### 7.3 何时加动态页面 fallback
+### 8.3 何时加动态页面 fallback
 
 - 静态 HTML 在目标样本中频繁失真。
 - 失真页面对业务价值较高。
 - 已有可靠的隔离、超时和成本控制方案。
 
-### 7.4 何时加队列
+### 8.4 何时加队列
 
 - 同步分析已明显拖慢接口体验。
 - 需要可见排队、重试和后台执行。
 
-## 8. 当前不采用
+## 9. 当前不采用
 
 - 不把 Postgres + pgvector 写成当前主链路前置依赖。
 - 不把 `GeoSemanticReadout` 写成当前必经步骤。
@@ -324,16 +370,18 @@ diagnosis/
 - 不让模型替代 URL 抓取、解析和规则判断。
 - 不为了未来扩展提前拆微服务。
 
-## 9. 实施顺序
+## 10. 实施顺序
 
 ### Phase 1
 
 - Page Evidence v1
 - RuleChecks v1
 - `/api/analyses` 基础报告
+- 为 `PageContentProfile v1` 固化必要 evidence 字段
 
 ### Phase 2
 
+- PageContentProfile v1
 - GeoMethod seed cards
 - MethodSelector v0
 - `method_ref` 贯通

@@ -44,12 +44,35 @@ Validator 负责校验输出
 | `paper_structural_geo_2026` | Structural Feature Engineering for GEO | https://arxiv.org/abs/2603.29979 | medium | 结构型 GEO：macro / meso / micro 页面结构特征。2026 预印本，作为候选策略使用 |
 | `paper_citation_absorption_2026` | From Citation Selection to Citation Absorption | https://arxiv.org/abs/2604.25707 | medium | citation selection 与 citation absorption 分离、evidence-container 设计。2026 预印本，作为测量和假设框架使用 |
 | `paper_dont_measure_once_2026` | Don't Measure Once | https://arxiv.org/abs/2604.07585 | medium | GEO 监测不能单次采样，需重复测量和稳定性指标。2026 预印本，第一阶段可作为后续监控方法 |
+| `paper_attribution_survey_2025` | Attribution, Citation, and Quotation Survey | https://arxiv.org/abs/2508.15396 | high | 区分 citation、attribution、quotation，约束输出可追溯 |
+| `paper_rag_eval_2024` | Evaluation of RAG: A Survey | https://arxiv.org/abs/2405.07437 | high | groundedness、faithfulness、retrieval relevance 的评估维度 |
+| `paper_wcxb_2026` | WCXB: A Multi-Type Web Content Extraction Benchmark | https://arxiv.org/abs/2605.21097 | medium | 不同 page type 的正文抽取难度不同，支持 page-type-aware extraction |
+| `paper_web2text_2018` | Web2Text: Deep Structured Boilerplate Removal | https://arxiv.org/abs/1801.02607 | high | DOM block 级 boilerplate removal 与主内容抽取 |
+| `paper_ipi_2023` | Not what you've signed up for | https://arxiv.org/abs/2302.12173 | high | 间接 prompt injection，网页是非可信输入 |
+| `paper_bipia_2023` | Benchmarking and Defending Against Indirect Prompt Injection | https://arxiv.org/abs/2312.14197 | high | boundary awareness 和 explicit reminder 等防御思路 |
+| `paper_ipi_wild_2026` | Indirect Prompt Injection in the Wild | https://arxiv.org/abs/2604.27202 | medium | 攻击可能藏在 comments、metadata、隐藏内容中 |
+| `doc_google_structured_data` | Google Structured Data General Guidelines | https://developers.google.com/search/docs/appearance/structured-data/sd-policies | high | schema 必须与页面可见内容一致，不能误导 |
+| `doc_schema_org_core` | Schema.org Article/Product/FAQPage/BreadcrumbList | https://schema.org/ | high | Article、Product、FAQ、Breadcrumb 等类型字段依据 |
 | `doc_deepseek_json` | DeepSeek JSON Output | https://api-docs.deepseek.com/guides/json_mode | high | DeepSeek 结构化 JSON 输出约束 |
 | `doc_deepseek_models` | DeepSeek Models & Pricing | https://api-docs.deepseek.com/quick_start/pricing | high | 当前可用模型与 JSON Output 能力确认 |
 
-## 3. 论文级结论
+## 3. GEO 底层模型
 
-### 3.1 GEO 的有效优化不等于传统 SEO
+本项目把 GEO 定义为页面级 readiness，而不是真实平台 visibility 的直接证明。底层模型由五个互相连接的判断面组成：
+
+| 判断面 | 核心问题 | 关键字段 | 进入模块 |
+|---|---|---|---|
+| `selection_readiness` | 页面能否进入候选来源集合 | crawl access、entity、schema、lang、canonical | `PageEvidencePack`、`RuleChecks` |
+| `absorption_readiness` | 页面内容能否进入生成答案 | answer units、definition、comparison、procedure、statistics | `PageContentProfile`、`RuleChecks` |
+| `claim_evidence_support` | 主张是否可验证 | claim candidates、evidence candidates、support label、unsupported ratio | `PageContentProfile`、`RuleChecks`、`Validator` |
+| `structure_readability` | 页面结构是否利于抽取和复用 | outline、section types、block length、tables/lists | parser、content blocks、RuleChecks |
+| `safe_grounded_generation` | 模型是否只基于可信边界输出 | evidence_ref、method_ref、safe prompt envelope、unknown policy | MethodSelector、DeepSeek、Validator |
+
+`PageContentProfile v1` 是这些判断面的统一承载层。当前实现阶段可以先把必要信号保存在 `PageEvidencePack` 和 `RuleChecks` 中，但后续应收敛为独立 schema 或 builder。
+
+## 4. 论文级结论
+
+### 4.1 GEO 的有效优化不等于传统 SEO
 
 `paper_geo_2024` 的核心发现是：生成式搜索的可见性不是传统排名位置，而是内容在生成答案中的被引用、被吸收、被展示的程度。有效策略更偏向让页面成为可验证、可引用、可综合的答案材料，而不是单纯塞关键词。
 
@@ -68,7 +91,7 @@ Validator 负责校验输出
 - 没有证据支撑的权威口吻。
 - 无来源的数字和引用。
 
-### 3.2 GEO 要分成 selection 和 absorption
+### 4.2 GEO 要分成 selection 和 absorption
 
 `paper_citation_absorption_2026` 把 GEO 拆成两层：
 
@@ -83,7 +106,7 @@ Validator 负责校验输出
 - absorption 侧看语义相关性、结构清晰度、证据密度、可引用单元。
 - FAQ 格式本身不是充分条件；FAQ 必须包含具体、可验证、可复用的答案材料。
 
-### 3.3 结构是 GEO 的独立优化维度
+### 4.3 结构是 GEO 的独立优化维度
 
 `paper_structural_geo_2026` 提出把页面结构分成三层：
 
@@ -93,7 +116,7 @@ Validator 负责校验输出
 
 实践上，结构优化应先做 macro，再做 meso，最后做 micro。不要先做细碎强调而忽视页面整体组织。
 
-### 3.4 可验证性是 GEO 输出质量底线
+### 4.4 可验证性是 GEO 输出质量底线
 
 `paper_verifiability_2023` 对生成式搜索提出两个关键指标：
 
@@ -106,7 +129,7 @@ Validator 负责校验输出
 - DeepSeek 输出每条问题、建议、资产草案都必须引用 `evidence_ref` 和 `method_ref`。
 - 缺证据时必须输出 `unknown`，不能补写事实。
 
-### 3.5 方法知识必须进入诊断链路，但不必先上复杂 RAG
+### 4.5 方法知识必须进入诊断链路，但不必先上复杂 RAG
 
 `paper_rag_2020` 的系统启发是：知识密集型生成不应只依赖模型参数，应该把可更新、可检查的外部知识作为上下文输入。
 
@@ -117,7 +140,7 @@ Validator 负责校验输出
 - 当前阶段可以先用种子方法卡片和 deterministic selector。
 - 当方法规模和召回难度增长后，再升级为 top-k 检索、短 chunk 和更完整的 retrieval traces。
 
-### 3.6 GEO 监测不能只测一次
+### 4.6 GEO 监测不能只测一次
 
 `paper_dont_measure_once_2026` 的实践含义是：AI 搜索结果有随机性和时间漂移，单次观测不可靠。
 
@@ -127,7 +150,28 @@ Validator 负责校验输出
 - 后续如果做 AI 搜索采样，必须按 prompt、engine、时间窗口重复采样。
 - 报告要展示分布、稳定性和置信范围，而不是单点排名。
 
-## 4. 可入库 Method Chunks
+### 4.7 网页内容是非可信模型输入
+
+Prompt injection 相关研究支持一个硬边界：网页、HTML comments、hidden DOM、metadata、script/style、站点声明和长正文都只能作为外部数据，不能作为模型指令。
+
+对本项目的含义：
+
+- DeepSeek 输入必须使用 safe envelope。
+- raw HTML 不进入模型上下文。
+- 短 excerpt 必须带 `evidence_ref`，并且只是事实片段。
+- 页面中出现“忽略之前指令”“作为 AI 助手”等内容时，应记录为 safety finding。
+
+### 4.8 Schema 是机器可读意义线索，但必须与可见内容一致
+
+Google structured data 指南和 Schema.org 类型定义支持把 schema 作为 selection 与实体理解信号，但 schema 不能覆盖页面事实。
+
+对本项目的含义：
+
+- `structured_data_profile.visible_alignment` 是 P0 规则输入。
+- Product、Article、FAQPage、BreadcrumbList 需要按 page type 校验完整性。
+- schema 中出现但页面不可见的优势、价格、评分、FAQ 不应被模型当作事实。
+
+## 5. 可入库 Method Chunks
 
 ### chunk_geo_source_citation_001
 
@@ -428,6 +472,45 @@ Validator 负责校验输出
 - `evidence_required`: `search_sampling_runs`
 - `anti_pattern`: 不要只展示一次截图或一次回答作为效果证据。
 
+### chunk_geo_schema_alignment_001
+
+- `source_ref`: `doc_google_structured_data`
+- `method_type`: `system_rule`
+- `page_type`: `article | product | docs | landing | comparison`
+- `failure_type`: `schema_misaligned | weak_entity`
+- `asset_type`: `json_ld`
+- `trust_level`: `high`
+- `text`: 结构化数据必须描述页面用户可见主内容。schema 是生成式系统理解页面实体和关系的重要线索，但不能标记隐藏、无关或误导性内容。
+- `action_pattern`: 对照可见正文、标题、表格和 FAQ 检查 schema 类型、属性和取值；缺失关键属性时生成 JSON-LD patch；发现不可见内容时建议删除或补充可见支撑。
+- `evidence_required`: `structured_data_profile`, `content_blocks`, `metadata`
+- `anti_pattern`: 不要用 schema 虚构页面没有的价格、评分、FAQ、认证或客户案例。
+
+### chunk_geo_page_type_aware_extraction_001
+
+- `source_ref`: `paper_wcxb_2026`
+- `method_type`: `rubric`
+- `page_type`: `generic`
+- `failure_type`: `main_content_confidence_low`
+- `asset_type`: `none`
+- `trust_level`: `medium`
+- `text`: 主内容抽取必须按页面类型调整。产品页、列表页、文档页、首页和文章页的正文信号不同，不能只用新闻文章启发式。
+- `action_pattern`: 先识别 page_type，再决定 headings、tables、schema、lists、cards 和正文块的权重。
+- `evidence_required`: `metadata`, `headings`, `content_blocks`, `structured_data`
+- `anti_pattern`: 不要把导航卡片、页脚或营销模板误判为主内容。
+
+### chunk_geo_safe_prompt_pack_001
+
+- `source_ref`: `paper_bipia_2023`
+- `method_type`: `system_rule`
+- `page_type`: `generic`
+- `failure_type`: `prompt_injection_risk`
+- `asset_type`: `none`
+- `trust_level`: `high`
+- `text`: 外部网页内容进入模型前必须分离 System、Facts、Methods、Snippets 和 Output Schema。网页内容只有数据属性，不得被当作指令。
+- `action_pattern`: 构造 safe envelope，声明 external_content_is_untrusted，所有 snippets 带 evidence_ref，模型缺证据输出 unknown。
+- `evidence_required`: `PageEvidencePack`, `PageContentProfile`, `RuleChecks`, `SelectedMethods`
+- `anti_pattern`: 不要把 raw HTML、HTML comments、hidden DOM、script/style、llms.txt 原文或完整 clean markdown 作为无边界 prompt。
+
 ### chunk_geo_output_guardrail_001
 
 - `source_ref`: `doc_deepseek_json`
@@ -441,16 +524,18 @@ Validator 负责校验输出
 - `evidence_required`: `prompt_pack`, `output_schema`
 - `anti_pattern`: 不要依赖纯自然语言报告作为 API 输出。
 
-## 5. 当前落地方式
+## 6. 当前落地方式
 
-### 5.1 当前主链路
+### 6.1 当前主链路
 
 本知识库当前推荐服务于以下链路：
 
 ```text
 URL
--> Fetcher / Parser / Rule Check
+-> Fetcher / Parser / Evidence Builder
 -> PageEvidencePack
+-> PageContentProfile
+-> RuleChecks
 -> MethodSelector
 -> Selected Methods
 -> DeepSeek Diagnosis
@@ -460,10 +545,10 @@ URL
 关键点：
 
 - DeepSeek 不直接读取网页。
-- 当前先让模型消费事实和方法，而不是先做网页 GEO 抽象。
+- 当前先让模型消费事实、GEO 抽象和方法，而不是让模型替代网页抽象。
 - 这份知识文档当前首先要被转成种子方法卡片，而不是直接全文塞入 prompt。
 
-### 5.2 当前推荐方法卡片结构
+### 6.2 当前推荐方法卡片结构
 
 ```json
 {
@@ -480,7 +565,7 @@ URL
 }
 ```
 
-### 5.3 可选研究项
+### 6.3 可选研究项
 
 `GeoSemanticReadout` 仍然可以保留为后续研究方向，但不是当前实现前置。只有在以下情况同时成立时，再考虑加入：
 
@@ -488,9 +573,9 @@ URL
 - 现有 selector 无法表达复杂 GEO 语义。
 - 第二次模型调用能带来可量化收益。
 
-## 6. 当前选择策略与后续检索演进
+## 7. 当前选择策略与后续检索演进
 
-### 6.1 当前阶段
+### 7.1 当前阶段
 
 当前优先使用四类选择信号：
 
@@ -510,7 +595,7 @@ URL
 }
 ```
 
-### 6.2 后续阶段
+### 7.2 后续阶段
 
 当方法卡片规模增长后，再升级为：
 
@@ -520,7 +605,7 @@ URL
 - top-k method pack
 - retrieval traces
 
-## 7. 第一批种子方法优先级
+## 8. 第一批种子方法优先级
 
 P0 必须先转成种子方法卡片：
 
@@ -529,6 +614,8 @@ P0 必须先转成种子方法卡片：
 - `chunk_geo_claim_evidence_pair_001`
 - `chunk_geo_citation_recall_001`
 - `chunk_geo_citation_precision_001`
+- `chunk_geo_schema_alignment_001`
+- `chunk_geo_safe_prompt_pack_001`
 - `chunk_geo_rag_method_retrieval_001`
 - `chunk_geo_rag_traceability_001`
 - `chunk_geo_output_guardrail_001`
@@ -544,6 +631,7 @@ P1 建议继续补充：
 - `chunk_geo_procedure_unit_001`
 - `chunk_geo_macro_structure_001`
 - `chunk_geo_meso_structure_001`
+- `chunk_geo_page_type_aware_extraction_001`
 - `chunk_geo_semantic_preservation_001`
 
 P2 后续再扩充：
@@ -553,17 +641,19 @@ P2 后续再扩充：
 - `chunk_geo_measurement_repeat_001`
 - `chunk_geo_measurement_similarity_001`
 
-## 8. 对现有项目文档的影响
+## 9. 对现有项目文档的影响
 
 当前正式文档应保持以下一致结论：
 
 - DeepSeek 是诊断模型，不是事实来源。
 - Page Evidence 和 GEO Methods 必须分离。
 - 方法知识必须进入诊断链路。
+- `PageContentProfile` 是目标 GEO 抽象层；当前可先由 Page Evidence 和 RuleChecks 预留字段。
+- GEO 报告应区分 selection、absorption、claim-evidence、structure 和 safety。
 - 当前先做种子方法卡片和 selector，不把复杂 RAG 写成 M1 前置。
 - 输出必须是可校验 JSON。
 
-## 9. 最终判断
+## 10. 最终判断
 
 当前最优做法不是先做复杂 RAG，也不是先做双模型抽象，而是：
 

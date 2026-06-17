@@ -12,12 +12,29 @@
 
 > 输入一个 URL，系统先把页面变成可追踪、可校验的 `PageEvidencePack`，再基于规则和 GEO 方法给出结构化优化建议。
 
-当前完整目标链路：
+### 1.1 GEO 的项目内定义
+
+本项目中的 GEO 不是“AI SEO 关键词优化”，也不是承诺某个生成式平台一定引用页面。它是一个页面级诊断框架，用来判断单个 URL 是否具备被生成式答案系统安全使用的条件。
+
+项目内 GEO 必须同时覆盖五个维度：
+
+| 维度 | 含义 | 主要承载模块 |
+|---|---|---|
+| `selection_readiness` | 页面是否可抓取、可解析、实体清晰、结构化信号可用 | `PageEvidencePack`、`RuleChecks` |
+| `absorption_readiness` | 页面是否有可被答案吸收的定义、数字事实、比较、步骤、FAQ、证据块 | `PageContentProfile`、`RuleChecks` |
+| `claim_evidence_support` | 核心主张是否有 nearby evidence、来源、日期、范围或可验证支撑 | `PageContentProfile`、`RuleChecks`、`Validator` |
+| `structure_readability` | macro / meso / micro 结构是否利于抽取、引用和复用 | parser、content blocks、rule engine |
+| `safe_grounded_generation` | 外部网页内容是否被当作不可信数据，模型输出是否绑定 `evidence_ref` / `method_ref` | prompt pack、DeepSeek、Validator |
+
+因此本项目报告的第一阶段口径是 `GEO readiness`、`citation readiness` 和 `absorption readiness`，不是“真实平台排名提升”或“真实引用率提升”。
+
+目标完整链路：
 
 ```text
 用户输入 URL
 -> 安全抓取和页面解析
 -> PageEvidencePack
+-> PageContentProfile
 -> RuleChecks
 -> MethodSelector / GEO Methods
 -> DeepSeek 结构化诊断
@@ -111,15 +128,35 @@ DeepSeek 不负责：
 - 辅助文件：robots.txt、sitemap.xml、llms.txt、llms-full.txt。
 - 稳定的 `evidence_ref`。
 
-### 4.2 `RuleChecks`
+### 4.2 `PageContentProfile`
 
-确定性规则输出，负责在不依赖模型的情况下先给出基础判断。
+页面 GEO 抽象层，把 `PageEvidencePack` 中的事实转成可诊断对象。当前阶段不要求先完整实现独立模块，但 `PageEvidencePack v1` 与 `RuleChecks v1` 的字段设计必须为它预留稳定位置。
 
-### 4.3 `GeoMethodCards`
+至少应表达：
+
+- `page_type`、`search_intent`、`primary_entity`。
+- `content_outline` 与 macro / meso / micro 结构信号。
+- `answer_units`：definition、fact、comparison、procedure、faq、quote。
+- `claim_candidates`、`evidence_candidates`、`statistics`。
+- `structured_data_profile` 与 visible-content alignment。
+- `selection_readiness`、`absorption_readiness`、`content_gaps`。
+- `prompt_injection_risk` 与不可传模型片段标记。
+
+### 4.3 `RuleChecks`
+
+确定性规则输出，负责在不依赖模型的情况下先给出基础判断。规则不能只检查 metadata，还要逐步覆盖 GEO 维度：
+
+- 抓取与解析：URL safety、HTML 类型、重定向、主内容置信度。
+- selection：实体清晰、canonical、schema、breadcrumb、语言。
+- absorption：定义单元、比较单元、步骤单元、summary block。
+- claim-evidence：无来源主张、数字无口径、引用不支撑主张。
+- safety：hidden instruction、HTML comment prompt injection、raw HTML 禁止直传模型。
+
+### 4.4 `GeoMethodCards`
 
 当前阶段优先使用人工维护的种子方法卡片，而不是直接上完整 RAG。
 
-### 4.4 `DiagnosisReport`
+### 4.5 `DiagnosisReport`
 
 后续阶段的结构化诊断结果。它必须引用 `evidence_ref`，并在方法链路启用后引用 `method_ref`。
 

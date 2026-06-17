@@ -17,11 +17,15 @@ URL
 
 MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段，不应反向阻塞当前 Page Evidence v1。
 
+协作时所有角色必须使用同一套 GEO 定义：当前报告衡量的是页面级 `selection_readiness`、`absorption_readiness`、`claim_evidence_support`、`structure_readability` 和 `safe_grounded_generation`，不是传统 SEO 排名，也不是真实平台曝光承诺。
+
 ## 2. 协作原则
 
 ### 2.1 Evidence-first
 
 任何人做上层模块时，都不能绕过 `PageEvidencePack` 和 `RuleChecks`。
+
+每个 GEO 判断都必须说明它来自页面证据、方法卡片、规则推断还是模型归纳。
 
 ### 2.2 Contract-first
 
@@ -72,6 +76,7 @@ MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段
 - HTML 解析。
 - `PageEvidencePack`。
 - `RuleChecks`。
+- 为 `PageContentProfile` 预留 page type、entity、claim/evidence、schema alignment、主内容置信度等信号。
 
 当前阶段交付：
 
@@ -84,6 +89,7 @@ MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段
 - 支持安全 URL 校验。
 - 支持 HTML 解析和 evidence refs。
 - 支持无模型规则输出。
+- 基础规则能区分 selection blocker、absorption blocker、claim-evidence blocker 和 safety blocker。
 
 ### 3.3 Role C：Method Knowledge Owner
 
@@ -92,6 +98,8 @@ MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段
 - GEO 方法来源梳理。
 - 种子方法卡片维护。
 - `MethodSelector v0` 设计。
+- 维护 `page_type`、`failure_type`、`asset_type`、`evidence_level` 的统一枚举。
+- 将论文结论转成可执行方法卡，而不是把论文全文塞入运行时 prompt。
 
 当前阶段不阻塞 Page Evidence。可以并行准备：
 
@@ -118,6 +126,8 @@ MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段
 - 输出 schema 草案
 - evidence_ref / method_ref 校验规则
 - 后续质量用例
+- DeepSeek safe input envelope：只接收结构化事实、Profile、RuleChecks、Selected Methods 和带引用短 excerpt。
+- 输出 guardrail：无证据输出、无方法引用、排名保证、虚构数字一律拦截。
 
 ### 3.5 Role E：Frontend / UX Owner
 
@@ -132,6 +142,7 @@ MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段
 
 - 对接真实 `POST /api/analyses`。
 - 展示基础状态和规则报告。
+- 报告 UI 术语使用 `readiness`、`evidence`、`method`、`unknown`，避免显示成真实排名承诺。
 
 当前阶段不应被要求先完成完整 Copilot 对话体验。
 
@@ -269,12 +280,16 @@ PageEvidencePack
 - H1 异常可判断。
 - schema 缺失可判断。
 - 内容过薄或 claim 缺 evidence 有基础判断。
+- selection / absorption / claim-evidence / structure / safety 五类问题至少能映射到明确 failure_type。
+- 每条 finding 必须带 `evidence_ref`；未来方法阶段必须能继续绑定 `method_ref`。
 
 ### 7.4 方法阶段
 
 - 种子方法卡片结构稳定。
 - `method_ref` 可追踪。
 - 当前阶段不要求 pgvector 才算完成。
+- selector 输入必须包含 page_type、failure_type、asset_type 和 evidence_level。
+- selector 输出不能推荐没有页面证据支撑的资产草案。
 
 ### 7.5 模型阶段
 
@@ -282,6 +297,8 @@ PageEvidencePack
 - schema 校验
 - 无效 JSON 有重试或降级
 - 不允许无证据事实
+- 不允许 raw HTML、comments、hidden DOM 或完整 clean markdown 作为无边界 prompt 输入。
+- 每条 issue、action、asset 都必须绑定 `evidence_ref` 和 `method_ref`。
 
 ## 8. Definition of Done
 

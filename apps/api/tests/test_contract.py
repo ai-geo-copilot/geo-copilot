@@ -8,8 +8,10 @@ from apps.api.app.page_evidence.models import (
     AnalysisResult,
     CrawlAccessEvidence,
     EvidenceValue,
+    ExtractionInfo,
     FetchInfo,
     FetchedResource,
+    GeoSignals,
     MetadataEvidence,
     PageEvidencePack,
     RuleCheck,
@@ -69,6 +71,8 @@ class _StubService:
                     heading_count=0,
                     has_json_ld=False,
                 ),
+                extraction=ExtractionInfo(clean_markdown_sha256="abc123"),
+                geo_signals=GeoSignals(),
                 storage=StorageEvidence(
                     analysis_id="11111111-1111-1111-1111-111111111111",
                     snapshot_dir="data/analyses/11111111-1111-1111-1111-111111111111",
@@ -76,10 +80,11 @@ class _StubService:
             ),
             rule_checks=[
                 RuleCheck(
-                    rule_id="metadata.title_present",
+                    rule_id="metadata.title_missing",
                     severity="high",
                     status="passed",
                     finding="title is present.",
+                    failure_type="selection_blocker",
                     evidence_refs=["metadata.title"],
                 )
             ],
@@ -125,4 +130,6 @@ def test_create_analysis_returns_completed_contract(client: TestClient) -> None:
     assert body["language"] == "zh-CN"
     assert body["error_code"] is None
     assert body["page_evidence"]["metadata"]["title"]["value"] == "Example"
-    assert body["rule_checks"][0]["rule_id"] == "metadata.title_present"
+    assert body["page_evidence"]["extraction"]["parser"] == "selectolax"
+    assert body["page_evidence"]["geo_signals"]["page_type_hint"] == "unknown"
+    assert body["rule_checks"][0]["rule_id"] == "metadata.title_missing"
