@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from .models import PageEvidencePack, RuleCheck
+from .models import PageContentProfile, PageEvidencePack, RuleCheck
+from .page_content_profile import build_page_content_profile
 
 
 def build_rule_checks(pack: PageEvidencePack) -> list[RuleCheck]:
     findings: list[RuleCheck] = []
+    profile = build_page_content_profile(pack)
 
     _append_metadata_check(findings, pack, "title", pack.metadata.title.value, "high")
     _append_metadata_check(findings, pack, "description", pack.metadata.description.value, "medium")
@@ -88,6 +90,8 @@ def build_rule_checks(pack: PageEvidencePack) -> list[RuleCheck]:
             recommendation=None if has_definition or not needs_definition else "Add a concise definition or summary block near the top of the page.",
         )
     )
+    findings.append(_build_readiness_rule(profile, "selection"))
+    findings.append(_build_readiness_rule(profile, "absorption"))
 
     unsupported_claims = [claim for claim in pack.geo_signals.claim_candidates if claim.needs_support and not claim.nearby_evidence_refs]
     findings.append(
@@ -217,3 +221,55 @@ def _is_heading_hierarchy_valid(pack: PageEvidencePack) -> bool:
             return False
         previous_level = heading.level
     return True
+
+
+def _build_readiness_rule(profile: PageContentProfile, readiness_type: str) -> RuleCheck:
+    readiness = profile.selection_readiness if readiness_type == "selection" else profile.absorption_readiness
+    gap_refs = profile.page_type_evidence_refs if readiness_type == "selection" else profile.boilerplate_metrics.evidence_refs
+    related_gaps = _related_gaps(profile, readiness_type)
+    status = "passed"
+    if readiness.status == "weak":
+        status = "failed"
+    elif readiness.status == "mixed":
+        status = "warning"
+
+    gap_suffix = ""
+    if related_gaps:
+        gap_suffix = " Gaps: " + ", ".join(related_gaps) + "."
+
+    recommendation = None
+    if status != "passed":
+        recommendation = (
+            "Strengthen selection signals with clearer metadata, entity cues, and aligned schema."
+            if readiness_type == "selection"
+            else "Strengthen answer-ready content with clearer definitions, evidence, and visible main content."
+        )
+
+    return RuleCheck(
+        rule_id=f"{readiness_type}.readiness_low",
+        severity="medium" if readiness_type == "selection" else "high",
+        status=status,  # type: ignore[arg-type]
+        finding=(
+            f"{readiness_type.capitalize()} readiness score is {readiness.score:.3f} "
+            f"({readiness.status}).{gap_suffix}"
+        ),
+        failure_type=f"{readiness_type}_blocker",
+        evidence_refs=readiness.evidence_refs or gap_refs or [readiness.evidence_ref],
+        recommendation=recommendation,
+    )
+
+
+def _related_gaps(profile: PageContentProfile, readiness_type: str) -> list[str]:
+    if readiness_type == "selection":
+        relevant = {
+            "primary_entity_unclear",
+            "structured_data_missing_for_page_type",
+        }
+    else:
+        relevant = {
+            "definition_unit_missing",
+            "unsupported_claims_present",
+            "main_content_confidence_low",
+            "prompt_injection_risk_present",
+        }
+    return [gap for gap in profile.content_gaps if gap in relevant]

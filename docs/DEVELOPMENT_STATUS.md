@@ -22,7 +22,7 @@
 
 > Page Evidence v1 开发中。
 > 当前主链路已扩展到 `PageEvidencePack + extraction + geo_signals + RuleChecks v1 P0`。
-> 下一阶段是继续补齐剩余 fixture 矩阵，并冻结字段口径与 evidence_ref 稳定性。
+> 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy` 三类 fixture 覆盖，下一阶段是继续冻结字段口径与 evidence_ref 稳定性。
 
 ## 3. 当前优先级
 
@@ -59,6 +59,7 @@
 - `apps/api/app/page_evidence/structured_data.py`
 - `apps/api/app/page_evidence/content_blocks.py`
 - `apps/api/app/page_evidence/geo_signals.py`
+- `apps/api/app/page_evidence/page_content_profile.py`
 - `apps/api/app/page_evidence/rule_checks.py`
 - `apps/api/app/page_evidence/storage.py`
 - `apps/api/app/page_evidence/service.py`
@@ -75,9 +76,10 @@
 - Content/rules：已支持 metadata、headings、links、images、tables、content blocks、基础 `RuleChecks`
 - Extraction：已输出 `parser`、`structured_data_parser`、`main_content_extractor`、`clean_markdown_sha256` 和 `warnings`
 - GEO-ready signals：已输出 `page_type_hint`、`primary_entity_candidates`、`content_outline`、`answer_unit_candidates`、`claim_candidates`、`evidence_candidates`、`statistics`、`structured_data_profile`、`boilerplate_metrics`、`safety_flags`
-- RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`
+- PageContentProfile v1 minimal read model：已可从 `PageEvidencePack` 构建 `page_type`、entity/outline/answer units、claim/evidence/statistics、schema/boilerplate、安全风险、`selection_readiness`、`absorption_readiness`、`content_gaps`
+- RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`；当前已开始直接消费 `PageContentProfile` 的 readiness 信号
 - Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`rule_checks.json`、`analysis.json`
-- Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试
+- Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试，并已覆盖 `rdfa`、`opengraph-only`、`navigation-heavy` 场景，以及 snapshot 落盘 / round-trip 回归
 
 ### 4.4 当前契约状态
 
@@ -112,8 +114,9 @@
 当前文档口径：
 
 - `PageContentProfile` 是目标 GEO 抽象层。
-- 当前实现阶段仍不把 `PageContentProfile` 独立模块作为 Page Evidence v1 冻结前置。
+- 当前已实现最小 `PageContentProfile` read model，但仍不把它作为额外 extraction 链路或独立大模块并行扩张。
 - 当前不因文档方法论补强而改变“先冻结 PageEvidencePack v1 和 RuleChecks v1”的开发优先级。
+- `docs/模块开发补充/HTTP层GEO开发流程与完成标准.md` 已更新为当前执行顺序：先冻结 `PageEvidencePack / evidence_ref / fixtures`，再最小实现 `PageContentProfile` read model，最后冻结 `RuleChecks v1`。
 - HTTP 模块完成口径是 `PageEvidencePack v1 + GEO-ready signals + RuleChecks v1 + fixtures + snapshots`，不是接入 DeepSeek 或 MethodSelector。
 
 ## 5. 当前边界
@@ -122,8 +125,8 @@
 
 - `PageEvidencePack v1` 字段口径最终冻结
 - `RuleChecks v1` 规则口径最终冻结
-- `PageContentProfile v1` schema / builder 实现
-- 剩余 fixture 矩阵补齐（如 `rdfa`、`opengraph-only`、`navigation-heavy` 等场景）
+- `PageContentProfile v1` 与后续消费层的正式接线 / 契约暴露
+- 更多真实样本下的 fixture / snapshot 固化与 `evidence_ref` 稳定性确认
 - 方法选择层
 - DeepSeek diagnosis 层
 
@@ -142,7 +145,7 @@
 
 最新验证结果：
 
-- `pytest`：21 passed
+- `pytest`：29 passed
 - `compileall`：通过
 
 当前测试已覆盖：
@@ -156,6 +159,10 @@
 - `trafilatura` markdown extraction
 - article JSON-LD / product microdata / schema mismatch / prompt injection hidden comment
 - comparison table / docs how-to procedure / thin content / multi-H1 bad structure
+- RDFa article / OpenGraph-only landing / navigation-heavy low-content
+- snapshot `evidence.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
+- `PageContentProfile` article/home/injection 风险构建测试
+- `RuleChecks` readiness 规则：`selection.readiness_low`、`absorption.readiness_low`
 
 已知验证噪声：
 
@@ -169,19 +176,20 @@
 
 - 解析栈虽已接入，但真实样本覆盖仍不足
 - `structured_data` 粒度和 `evidence_ref` 稳定性仍需用更多 fixture 固化
-- 文档已定义更深的 GEO 抽象层，但代码尚未实现 `PageContentProfile`
+- 最小 `PageContentProfile` 已落地，但尚未决定是否纳入 API 返回或后续诊断输入契约
+- `RuleChecks` 已开始读取 `PageContentProfile`，但 readiness 阈值与 finding 文案仍需更多 fixture 固化
 - 是否需要动态 fallback provider 仍未有样本证据支撑
 
 ## 8. 下一阶段
 
 下一阶段只做以下工作：
 
-1. 补更多 HTML fixture
-2. 补齐 `rdfa`、`opengraph-only`、`navigation-heavy` 等剩余场景并稳固当前 heuristic
-3. 继续细化 `evidence_ref` 稳定性
-4. 冻结 `PageEvidencePack v1`
-5. 冻结 `RuleChecks v1`
-6. 在冻结过程中保留 `PageContentProfile v1` 所需的 page type、entity、claim/evidence、schema alignment 和 readiness 输入信号
+1. 继续补更多 HTML fixture 和 snapshot 样本
+2. 继续细化 `evidence_ref` 稳定性
+3. 冻结 `PageEvidencePack v1`
+4. 决定最小 `PageContentProfile` 是否以及如何对外暴露给后续消费层
+5. 继续用 fixture 固化 `RuleChecks v1`，尤其是 readiness 规则阈值与 finding 口径
+6. 在冻结过程中继续保留 `PageContentProfile v1` 所需的 page type、entity、claim/evidence、schema alignment 和 readiness 输入信号
 
 完成这些之前，不进入：
 

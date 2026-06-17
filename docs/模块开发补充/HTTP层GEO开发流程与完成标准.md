@@ -27,6 +27,20 @@ URL
 
 HTTP 模块完成后，后续模块只能消费这些结构化对象，不能再回头让 DeepSeek 直接读 URL、raw HTML 或完整 clean markdown。
 
+当前推进顺序必须固定为：
+
+```text
+先冻结 PageEvidencePack / evidence_ref / fixtures
+-> 再最小实现 PageContentProfile read model
+-> 最后冻结 RuleChecks v1 口径
+```
+
+说明：
+
+- 当前代码中的 `geo_signals.py` 已经承担 `PageContentProfile` 所需的大部分输入信号。
+- 因此当前阶段不应把 `PageContentProfile` 当成独立大模块并行重做。
+- `RuleChecks` 当前也不是从零设计，而是基于 `PageEvidencePack + geo_signals` 做 fixture-driven freeze。
+
 ## 2. 依据来源
 
 本文基于仓库正式文档和以下外部主源。外部研究只转化为工程约束，不转化为排名承诺。
@@ -219,10 +233,37 @@ page_evidence/
 说明：
 
 - 这不是完整 `PageContentProfile v1`。
-- 它是 HTTP 层为了完成 Page Evidence v1 / RuleChecks v1 所需的输入信号。
-- 后续可以把它升级或搬迁为正式 `PageContentProfile` builder。
+- 它是当前 HTTP 层里的 deterministic pre-profile layer。
+- 它的职责是为 `PageEvidencePack v1` 冻结和 `RuleChecks v1` 冻结提供稳定输入信号。
+- 只有在 evidence 字段、fixtures 和 `evidence_ref` 稳定后，才把它正式收敛成 `PageContentProfile` builder。
 
-### 4.7 `rule_checks.py`
+### 4.7 `PageContentProfile` 最小实现边界
+
+当前阶段如需新增 `PageContentProfile`，只允许做最小 read-model adapter。
+
+允许：
+
+- 只从 `PageEvidencePack` 构建
+- 复用 `geo_signals` 中已存在的对象和字段
+- 为后续 MethodSelector / Diagnosis / Report 提供更干净的消费对象
+
+不允许：
+
+- 重新抓取 URL
+- 重新解析 HTML
+- 重新抽 structured data
+- 重跑规则
+- 生成优化建议
+
+最小目标形态：
+
+```text
+PageEvidencePack
+-> PageContentProfile builder
+-> 只读 GEO 抽象对象
+```
+
+### 4.8 `rule_checks.py`
 
 职责：
 
@@ -245,6 +286,7 @@ page_evidence/
 完成信号：
 
 - 每个 P0 rule 至少有一个 pass fixture 和一个 fail/warning fixture。
+- `rule_id`、`severity`、`failure_type`、`evidence_refs` 在 fixture 回归中保持稳定。
 
 ## 5. PageEvidencePack v1 必须稳定的字段
 
@@ -554,6 +596,14 @@ P0 完成后再做 P1：
 - one negative or warning rule
 - snapshot roundtrip 不丢字段
 
+当前缺口优先级：
+
+1. `rdfa_article.html`
+2. `opengraph_only_landing.html`
+3. `navigation_heavy_low_content.html`
+
+在这三个 fixture 补齐前，不进入正式 `PageContentProfile v1` builder。
+
 ## 9. 开发顺序
 
 ### Step 0：基线确认
@@ -612,7 +662,7 @@ python -m compileall apps/api/app apps/api/tests
 6. claim/evidence/statistics candidates
 7. safety flags
 
-### Step 4：扩展 RuleChecks v1
+### Step 4：冻结 RuleChecks v1
 
 目标文件：
 
@@ -620,12 +670,31 @@ python -m compileall apps/api/app apps/api/tests
 
 要求：
 
+- 优先修已被 fixture 证明的 false positive / false negative。
 - rule id 使用稳定命名。
 - 每条 rule 绑定 failure_type。
 - 每条 failed/warning finding 必须有 evidence_refs。
 - recommendation 只建议修复方向，不编造页面事实。
+- 不为了“统一设计”重写规则系统。
 
-### Step 5：快照与 API 输出同步
+### Step 5：最小 `PageContentProfile` read model
+
+只有在 Step 1-4 基本稳定后才进入本步骤。
+
+目标文件：
+
+- 可选：`apps/api/app/page_evidence/page_content_profile.py`
+- 或可选：`apps/api/app/page_evidence/abstraction.py`
+- 如需新增模型，再补 `apps/api/app/page_evidence/models.py`
+
+要求：
+
+- builder 只接收 `PageEvidencePack`
+- 尽量直接复用 `geo_signals` 字段，而不是复制第二套 schema
+- 不引入独立 extraction 逻辑
+- 至少有一个基于现有 fixture 的构建测试
+
+### Step 6：快照与 API 输出同步
 
 目标文件：
 
@@ -640,7 +709,7 @@ python -m compileall apps/api/app apps/api/tests
 - `analysis.json` 不丢新字段。
 - API response 与 schema 对齐。
 
-### Step 6：冻结完成
+### Step 7：冻结完成
 
 执行：
 
@@ -692,4 +761,3 @@ HTTP 层已能从静态 HTML 生成可追踪 evidence、GEO-ready signals 和基
 当前输出是 page-level GEO readiness，不是实际 AI 搜索曝光或排名证明。
 后续 MethodSelector 和 DeepSeek 只能消费这些结构化对象，不能重新定义页面事实。
 ```
-

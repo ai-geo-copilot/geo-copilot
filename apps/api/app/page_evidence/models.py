@@ -226,6 +226,35 @@ class GeoSignals(BaseModel):
     safety_flags: list[SafetyFlag] = Field(default_factory=list)
 
 
+class ReadinessScore(BaseModel):
+    evidence_ref: str
+    score: float
+    status: Literal["strong", "mixed", "weak"]
+    reasons: list[str] = Field(default_factory=list)
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PageContentProfile(BaseModel):
+    source_evidence_pack_version: Literal["v1"] = "v1"
+    input_url: str
+    normalized_url: str
+    page_type: Literal["article", "product", "docs", "landing", "comparison", "home", "unknown"] = "unknown"
+    page_type_evidence_refs: list[str] = Field(default_factory=list)
+    primary_entity_candidates: list[PrimaryEntityCandidate] = Field(default_factory=list)
+    content_outline: list[ContentOutlineItem] = Field(default_factory=list)
+    answer_units: list[AnswerUnitCandidate] = Field(default_factory=list)
+    claim_candidates: list[ClaimCandidate] = Field(default_factory=list)
+    evidence_candidates: list[EvidenceCandidate] = Field(default_factory=list)
+    statistics: list[StatisticCandidate] = Field(default_factory=list)
+    structured_data_profile: StructuredDataProfile = Field(default_factory=StructuredDataProfile)
+    boilerplate_metrics: BoilerplateMetrics = Field(default_factory=BoilerplateMetrics)
+    prompt_injection_risk: Literal["low", "medium", "high"] = "low"
+    safety_flags: list[SafetyFlag] = Field(default_factory=list)
+    selection_readiness: ReadinessScore
+    absorption_readiness: ReadinessScore
+    content_gaps: list[str] = Field(default_factory=list)
+
+
 class StorageEvidence(BaseModel):
     analysis_id: UUID
     snapshot_dir: str

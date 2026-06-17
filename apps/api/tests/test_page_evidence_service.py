@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import socket
 
@@ -9,8 +10,15 @@ from apps.api.app.page_evidence.storage import SnapshotStorage
 from apps.api.app.page_evidence.url_safety import validate_public_url
 
 
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "html"
+
+
 def _resolver(_: str) -> list[str]:
     return ["93.184.216.34"]
+
+
+def _read_fixture(name: str) -> str:
+    return (FIXTURES_DIR / name).read_text(encoding="utf-8")
 
 
 def test_page_evidence_service_builds_snapshot_and_rule_checks(tmp_path: Path) -> None:
@@ -217,3 +225,64 @@ def test_page_evidence_service_counts_cjk_substance(tmp_path: Path) -> None:
     assert result.page_evidence.rule_check_inputs.word_count > 0
     assert result.page_evidence.rule_check_inputs.cjk_char_count > 0
     assert result.page_evidence.rule_check_inputs.substance_score == result.page_evidence.rule_check_inputs.cjk_char_count
+
+
+def test_page_evidence_service_snapshot_persists_evidence_and_rule_outputs(tmp_path: Path) -> None:
+    html = _read_fixture("opengraph_only_landing.html")
+    page_url = "https://example.com/platform/geowidget"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/platform/geowidget":
+            return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, text=html, request=request)
+        return httpx.Response(404, text="missing", request=request)
+
+    service = PageEvidenceService(
+        fetcher=PageFetcher(client=httpx.Client(transport=httpx.MockTransport(handler)), resolver=_resolver),
+        storage=SnapshotStorage(root_dir=tmp_path),
+        resolver=_resolver,
+    )
+
+    result = service.analyze(page_url, "zh-CN")
+
+    snapshot_dir = Path(result.snapshot_dir or "")
+    evidence_payload = json.loads((snapshot_dir / "evidence.json").read_text(encoding="utf-8"))
+    rule_payload = json.loads((snapshot_dir / "rule_checks.json").read_text(encoding="utf-8"))
+    analysis_payload = json.loads((snapshot_dir / "analysis.json").read_text(encoding="utf-8"))
+
+    assert evidence_payload["geo_signals"]["page_type_hint"] == "landing"
+    assert evidence_payload["structured_data"]["opengraph"]
+    assert evidence_payload["metadata"]["title"]["evidence_ref"] == "metadata.title"
+    assert evidence_payload["geo_signals"]["primary_entity_candidates"][0]["evidence_ref"] == "geo_signals.primary_entity_candidates[0]"
+    assert analysis_payload["page_evidence"]["storage"]["snapshot_dir"] == str(snapshot_dir)
+    assert any(
+        item["rule_id"] == "schema.structured_data_missing"
+        and item["status"] == "passed"
+        and item["evidence_refs"]
+        for item in rule_payload
+    )
+
+
+def test_snapshot_storage_load_result_round_trips_analysis(tmp_path: Path) -> None:
+    html = _read_fixture("rdfa_article.html")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/":
+            return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, text=html, request=request)
+        return httpx.Response(404, text="missing", request=request)
+
+    storage = SnapshotStorage(root_dir=tmp_path)
+    service = PageEvidenceService(
+        fetcher=PageFetcher(client=httpx.Client(transport=httpx.MockTransport(handler)), resolver=_resolver),
+        storage=storage,
+        resolver=_resolver,
+    )
+
+    result = service.analyze("https://example.com", "zh-CN")
+    reloaded = storage.load_result(result.id)
+
+    assert reloaded is not None
+    assert reloaded.id == result.id
+    assert reloaded.page_evidence is not None
+    assert reloaded.page_evidence.geo_signals.page_type_hint == "article"
+    assert reloaded.page_evidence.structured_data.rdfa
+    assert reloaded.rule_checks == result.rule_checks

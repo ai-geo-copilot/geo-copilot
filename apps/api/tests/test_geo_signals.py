@@ -87,3 +87,26 @@ def test_build_geo_signals_detects_prompt_injection_risk() -> None:
     assert any(flag.flag_type == "html_comment_instruction" for flag in signals.safety_flags)
     assert any(flag.flag_type == "metadata_instruction" for flag in signals.safety_flags)
     assert any(flag.flag_type == "hidden_text_instruction" for flag in signals.safety_flags)
+
+
+def test_build_geo_signals_supports_rdfa_opengraph_and_navigation_heavy_pages() -> None:
+    rdfa_parsed, _, rdfa_signals = _signals_for(
+        "rdfa_article.html",
+        "https://example.com/articles/rdfa-geo",
+    )
+    _, _, opengraph_signals = _signals_for(
+        "opengraph_only_landing.html",
+        "https://example.com/platform/geowidget",
+    )
+    _, nav_metrics, nav_signals = _signals_for(
+        "navigation_heavy_low_content.html",
+        "https://example.com/",
+    )
+
+    assert rdfa_parsed.structured_data.rdfa
+    assert rdfa_signals.structured_data_profile.types_detected
+    assert opengraph_signals.structured_data_profile.types_detected
+    assert opengraph_signals.page_type_hint == "landing"
+    assert nav_signals.page_type_hint == "home"
+    assert nav_metrics.boilerplate_ratio > 0
+    assert nav_signals.boilerplate_metrics.main_content_confidence < 0.5

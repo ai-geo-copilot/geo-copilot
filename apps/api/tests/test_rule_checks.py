@@ -66,6 +66,8 @@ def test_build_rule_checks_flags_thin_content_and_missing_metadata() -> None:
     assert indexed["metadata.description_missing"].status == "failed"
     assert indexed["content.minimum_substance_low"].status in {"failed", "warning"}
     assert indexed["content.definition_unit_missing"].status == "failed"
+    assert indexed["selection.readiness_low"].status in {"failed", "warning"}
+    assert indexed["absorption.readiness_low"].status == "failed"
 
 
 def test_build_rule_checks_flags_structure_schema_and_safety_problems() -> None:
@@ -82,3 +84,23 @@ def test_build_rule_checks_flags_structure_schema_and_safety_problems() -> None:
     assert mismatch_index["schema.visible_alignment_poor"].status == "failed"
     assert mismatch_index["schema.product_incomplete"].status in {"warning", "failed"}
     assert safety_index["safety.prompt_injection_suspected"].status == "failed"
+
+
+def test_build_rule_checks_handles_rdfa_opengraph_and_navigation_heavy_pages() -> None:
+    rdfa_checks = build_rule_checks(_build_pack("rdfa_article.html", "https://example.com/articles/rdfa-geo"))
+    opengraph_checks = build_rule_checks(_build_pack("opengraph_only_landing.html", "https://example.com/platform/geowidget"))
+    nav_checks = build_rule_checks(_build_pack("navigation_heavy_low_content.html", "https://example.com/"))
+
+    rdfa_index = {check.rule_id: check for check in rdfa_checks}
+    opengraph_index = {check.rule_id: check for check in opengraph_checks}
+    nav_index = {check.rule_id: check for check in nav_checks}
+
+    assert rdfa_index["schema.structured_data_missing"].status == "passed"
+    assert rdfa_index["selection.readiness_low"].status == "passed"
+    assert rdfa_index["absorption.readiness_low"].status in {"warning", "passed"}
+    assert opengraph_index["schema.structured_data_missing"].status == "passed"
+    assert opengraph_index["selection.readiness_low"].status == "passed"
+    assert nav_index["content.main_content_confidence_low"].status == "failed"
+    assert nav_index["content.definition_unit_missing"].status == "passed"
+    assert nav_index["selection.readiness_low"].status == "passed"
+    assert nav_index["absorption.readiness_low"].status == "failed"

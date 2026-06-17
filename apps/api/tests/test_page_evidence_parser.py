@@ -65,3 +65,17 @@ def test_parse_html_collects_extraction_warnings_for_suspicious_instructions() -
         "hidden_text_instruction",
     ]
     assert all(warning.evidence_ref.startswith("extraction.warnings[") for warning in parsed.extraction_warnings)
+
+
+def test_parse_html_extracts_rdfa_and_opengraph_only_structured_data() -> None:
+    rdfa_html = (FIXTURES_DIR / "rdfa_article.html").read_text(encoding="utf-8")
+    opengraph_html = (FIXTURES_DIR / "opengraph_only_landing.html").read_text(encoding="utf-8")
+
+    rdfa_parsed = parse_html(rdfa_html, "https://example.com/articles/rdfa-geo")
+    opengraph_parsed = parse_html(opengraph_html, "https://example.com/platform/geowidget")
+
+    assert rdfa_parsed.structured_data.rdfa
+    assert rdfa_parsed.structured_data.rdfa[0].kind == "rdfa"
+    assert opengraph_parsed.structured_data.opengraph
+    assert opengraph_parsed.structured_data.opengraph[0].kind == "opengraph"
+    assert opengraph_parsed.structured_data.json_ld == []
