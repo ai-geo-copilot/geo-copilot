@@ -18,7 +18,7 @@
 
 ## 2. 当前总体阶段
 
-当前阶段：Sprint 0 scaffold 已完成；2026-06-17 已完成正式文档基线重构；准备进入完整 Page Evidence v1 开发。
+当前阶段：Sprint 0 scaffold 已完成；2026-06-17 已完成正式文档基线重构；同日已落地 Page Evidence v1 最小闭环骨架，下一步进入能力补全与覆盖率加固。
 
 当前优先级：
 
@@ -86,11 +86,41 @@
 
 当前状态：
 
-- schema 仍是 v0 占位契约
-- `page-evidence-pack.schema.json` 仅覆盖非常粗的对象结构
-- Page Evidence 开发时需要扩展并冻结 v1
+- `page-evidence-pack.schema.json` 已扩展为可支撑当前最小闭环的结构化契约
+- 当前 schema 已覆盖 input、fetch、metadata、crawl_access、structure、structured_data、content_blocks、rule_check_inputs、storage
+- 仍需在后续样本验证后继续冻结和细化 v1 字段口径
 
-### 3.5 Database scaffold
+### 3.5 Page Evidence v1 最小闭环（2026-06-17）
+
+已实现目录：
+
+- `apps/api/app/page_evidence/models.py`
+- `apps/api/app/page_evidence/errors.py`
+- `apps/api/app/page_evidence/url_safety.py`
+- `apps/api/app/page_evidence/fetcher.py`
+- `apps/api/app/page_evidence/parser.py`
+- `apps/api/app/page_evidence/structured_data.py`
+- `apps/api/app/page_evidence/content_blocks.py`
+- `apps/api/app/page_evidence/rule_checks.py`
+- `apps/api/app/page_evidence/storage.py`
+- `apps/api/app/page_evidence/service.py`
+
+已验证能力：
+
+- 仅允许 `http` / `https`
+- 拦截 localhost、私网、回环、链路本地、保留地址、multicast、unspecified 和 metadata IP
+- 主页面抓取支持手动重定向校验、超时、响应体大小限制和非 HTML 拒绝
+- 提取 `title`、`description`、`canonical`、`lang`、headings、links、images、tables、JSON-LD 和基础内容块
+- 抓取 `robots.txt`、`sitemap.xml`、`llms.txt`、`llms-full.txt` 的可达性状态
+- 生成基础 `RuleChecks`
+- 以文件快照落盘 `raw.html`、`clean.md`、`evidence.json`、`rule_checks.json`、`analysis.json`
+
+当前边界：
+
+- 当前 HTML 解析基于标准库 `html.parser`，未接 `selectolax` / `trafilatura` / `extruct`
+- 当前规则集为基础版本，不代表 Page Evidence v1 全量验收已完成
+- 当前 `POST /api/analyses` 采用同步分析返回结果
+### 3.6 Database scaffold
 
 已创建初始 migration：
 
@@ -106,7 +136,7 @@
 - migration 尚未在本地 Postgres 上执行验证
 - 本轮文档决策已确认：Page Evidence v1 不以数据库落库为前置条件
 
-### 3.6 Docs baseline refresh
+### 3.7 Docs baseline refresh
 
 已在 2026-06-17 重写并对齐以下正式文档：
 
@@ -125,7 +155,7 @@
 - 方法阶段先用种子卡片和 deterministic selector
 - `GeoSemanticReadout` 保留为后续研究项，不是当前主链路
 
-### 3.7 Git / GitHub
+### 3.8 Git / GitHub
 
 已添加 `.gitignore`，排除：
 
@@ -179,6 +209,23 @@
 - 当前代码实际仍处于占位阶段，`POST /api/analyses` 返回 `queued`
 - 当前 `page-evidence-pack.schema.json` 仍是 v0 占位结构
 - 因此正式文档已统一回收到 Page Evidence v1 优先的 evidence-first 路线
+
+### 4.3 Page Evidence 最小闭环验证（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- `pytest`：4 passed
+- 契约测试已从 queued 占位接口更新为 completed 实际分析响应
+- `PageEvidenceService` 已通过 mock transport fixture 验证：
+  - 能生成 `PageEvidencePack`
+  - 能生成基础规则检查
+  - 能写入分析快照目录
+- `compileall` 通过
 
 ## 5. 当前关键决策
 
@@ -278,6 +325,18 @@ DeepSeek 暂不作为事实来源。
 - 无 DeepSeek 时也能生成基础规则报告
 - 单元测试覆盖安全 URL、抓取异常、HTML 解析、规则检查
 
+当前已完成的子集：
+
+- 模块骨架与基础编排已落地
+- 基础 URL 安全校验、抓取、解析、规则检查和快照存储已打通
+- 基础测试已覆盖 mock 抓取成功路径和 unsafe URL 失败路径
+
+下一步仍需补强：
+
+- 用正式实现替换当前标准库解析器，验证 `selectolax` / `trafilatura` / `extruct`
+- 补更多 HTML fixture，覆盖非 HTML、重定向、薄内容、多 H1、缺 metadata 等场景
+- 继续细化 `evidence_ref` 稳定性和规则集口径
+
 ### 6.2 API integration
 
 目标文件：
@@ -313,6 +372,7 @@ DeepSeek 暂不作为事实来源。
 
 当前待验证事项：
 
+- 当前标准库解析对复杂页面的覆盖率仍待验证
 - `selectolax`、`trafilatura`、`extruct` 的组合是否覆盖目标样本
 - 静态 HTML 抽取在目标页面上的有效覆盖率
 - 是否需要在 Page Evidence v1 结束前引入额外 fallback provider

@@ -1,9 +1,18 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, HttpUrl
 
+from ..page_evidence import PageEvidenceService
+from ..page_evidence.models import AnalysisResult, PageEvidencePack, RuleCheck
+
 router = APIRouter(prefix="/analyses", tags=["analyses"])
+
+_service = PageEvidenceService()
+
+
+def get_analysis_service() -> PageEvidenceService:
+    return _service
 
 
 class AnalysisCreateRequest(BaseModel):
@@ -19,6 +28,9 @@ class AnalysisResponse(BaseModel):
     status: str
     language: str
     error_code: str | None = None
+    page_evidence: PageEvidencePack | None = None
+    rule_checks: list[RuleCheck] = Field(default_factory=list)
+    snapshot_dir: str | None = None
 
 
 class FollowUpRequest(BaseModel):
@@ -32,24 +44,27 @@ class FollowUpResponse(BaseModel):
     error_code: str | None = None
 
 
-@router.post("", response_model=AnalysisResponse, status_code=status.HTTP_202_ACCEPTED)
-def create_analysis(payload: AnalysisCreateRequest) -> AnalysisResponse:
-    return AnalysisResponse(
-        id=uuid4(),
-        input_url=str(payload.url),
-        status="queued",
-        language=payload.language,
-    )
+def _to_response(result: AnalysisResult) -> AnalysisResponse:
+    return AnalysisResponse(**result.model_dump())
+
+
+@router.post("", response_model=AnalysisResponse, status_code=status.HTTP_200_OK)
+def create_analysis(
+    payload: AnalysisCreateRequest,
+    service: PageEvidenceService = Depends(get_analysis_service),
+) -> AnalysisResponse:
+    return _to_response(service.analyze_safe(str(payload.url), payload.language))
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
-def get_analysis(analysis_id: UUID) -> AnalysisResponse:
-    return AnalysisResponse(
-        id=analysis_id,
-        input_url="unknown",
-        status="queued",
-        language="zh-CN",
-    )
+def get_analysis(
+    analysis_id: UUID,
+    service: PageEvidenceService = Depends(get_analysis_service),
+) -> AnalysisResponse:
+    result = service.get_result(analysis_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="analysis not found")
+    return _to_response(result)
 
 
 @router.post("/{analysis_id}/messages", response_model=FollowUpResponse)

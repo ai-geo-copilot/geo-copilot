@@ -3,20 +3,175 @@
   "$id": "https://geo-copilot.local/schemas/page-evidence-pack.schema.json",
   "title": "PageEvidencePack",
   "type": "object",
-  "required": ["metadata", "crawl_access", "schema", "content_blocks"],
+  "required": [
+    "input_url",
+    "normalized_url",
+    "fetch",
+    "metadata",
+    "crawl_access",
+    "structure",
+    "structured_data",
+    "content_blocks",
+    "rule_check_inputs",
+    "storage"
+  ],
   "properties": {
-    "metadata": { "type": "object" },
-    "crawl_access": { "type": "object" },
-    "schema": { "type": "object" },
+    "input_url": { "type": "string", "format": "uri" },
+    "normalized_url": { "type": "string", "format": "uri" },
+    "fetch": {
+      "type": "object",
+      "required": ["final_url", "status_code", "content_type", "elapsed_ms", "html_sha256", "redirect_chain"],
+      "properties": {
+        "final_url": { "type": "string", "format": "uri" },
+        "status_code": { "type": "integer" },
+        "content_type": { "type": "string" },
+        "elapsed_ms": { "type": "integer", "minimum": 0 },
+        "html_sha256": { "type": "string" },
+        "redirect_chain": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["from_url", "to_url", "status_code"],
+            "properties": {
+              "from_url": { "type": "string", "format": "uri" },
+              "to_url": { "type": "string", "format": "uri" },
+              "status_code": { "type": "integer" }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["title", "description", "canonical", "lang"],
+      "properties": {
+        "title": { "$ref": "#/$defs/evidenceValue" },
+        "description": { "$ref": "#/$defs/evidenceValue" },
+        "canonical": { "$ref": "#/$defs/evidenceValue" },
+        "lang": { "$ref": "#/$defs/evidenceValue" }
+      }
+    },
+    "crawl_access": {
+      "type": "object",
+      "required": ["robots_txt", "sitemap_xml", "llms_txt", "llms_full_txt"],
+      "properties": {
+        "robots_txt": { "$ref": "#/$defs/fetchedResource" },
+        "sitemap_xml": { "$ref": "#/$defs/fetchedResource" },
+        "llms_txt": { "$ref": "#/$defs/fetchedResource" },
+        "llms_full_txt": { "$ref": "#/$defs/fetchedResource" }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "required": ["headings", "links", "images", "tables"],
+      "properties": {
+        "headings": { "type": "array", "items": { "$ref": "#/$defs/headingEvidence" } },
+        "links": { "type": "array", "items": { "$ref": "#/$defs/linkEvidence" } },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/imageEvidence" } },
+        "tables": { "type": "array", "items": { "$ref": "#/$defs/tableEvidence" } }
+      }
+    },
+    "structured_data": {
+      "type": "object",
+      "required": ["json_ld"],
+      "properties": {
+        "json_ld": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } }
+      }
+    },
     "content_blocks": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["evidence_ref", "text"],
+        "required": ["evidence_ref", "text", "source_tag"],
         "properties": {
           "evidence_ref": { "type": "string" },
-          "text": { "type": "string" }
+          "text": { "type": "string" },
+          "source_tag": { "type": "string" }
         }
+      }
+    },
+    "rule_check_inputs": {
+      "type": "object",
+      "required": ["word_count", "content_block_count", "heading_count", "has_json_ld"],
+      "properties": {
+        "word_count": { "type": "integer", "minimum": 0 },
+        "content_block_count": { "type": "integer", "minimum": 0 },
+        "heading_count": { "type": "integer", "minimum": 0 },
+        "has_json_ld": { "type": "boolean" }
+      }
+    },
+    "storage": {
+      "type": "object",
+      "required": ["analysis_id", "snapshot_dir"],
+      "properties": {
+        "analysis_id": { "type": "string", "format": "uuid" },
+        "snapshot_dir": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "evidenceValue": {
+      "type": "object",
+      "required": ["evidence_ref"],
+      "properties": {
+        "value": { "type": ["string", "null"] },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "fetchedResource": {
+      "type": "object",
+      "required": ["url", "reachable", "evidence_ref"],
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "status_code": { "type": ["integer", "null"] },
+        "reachable": { "type": "boolean" },
+        "error_code": { "type": ["string", "null"] },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "headingEvidence": {
+      "type": "object",
+      "required": ["level", "text", "evidence_ref"],
+      "properties": {
+        "level": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "text": { "type": "string" },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "linkEvidence": {
+      "type": "object",
+      "required": ["href", "evidence_ref", "rel"],
+      "properties": {
+        "href": { "type": "string" },
+        "text": { "type": ["string", "null"] },
+        "rel": { "type": "array", "items": { "type": "string" } },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "imageEvidence": {
+      "type": "object",
+      "required": ["src", "evidence_ref"],
+      "properties": {
+        "src": { "type": "string" },
+        "alt": { "type": ["string", "null"] },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "tableEvidence": {
+      "type": "object",
+      "required": ["text", "evidence_ref"],
+      "properties": {
+        "text": { "type": "string" },
+        "evidence_ref": { "type": "string" }
+      }
+    },
+    "structuredDataItem": {
+      "type": "object",
+      "required": ["kind", "data", "evidence_ref"],
+      "properties": {
+        "kind": { "const": "json-ld" },
+        "data": {},
+        "evidence_ref": { "type": "string" }
       }
     }
   }
