@@ -5,7 +5,7 @@ import socket
 from collections.abc import Callable
 from urllib.parse import urlparse
 
-from .errors import UnsafeUrlError
+from .errors import DnsResolutionError, UnsafeUrlError
 
 Resolver = Callable[[str], list[str]]
 
@@ -54,12 +54,18 @@ def validate_public_url(url: str, resolver: Resolver | None = None) -> str:
             raise UnsafeUrlError("IP address is not allowed.")
         return url
 
-    resolved_addresses = (resolver or _default_resolver)(hostname)
+    try:
+        resolved_addresses = (resolver or _default_resolver)(hostname)
+    except (OSError, socket.gaierror) as exc:
+        raise DnsResolutionError("Hostname DNS resolution failed.") from exc
     if not resolved_addresses:
-        raise UnsafeUrlError("Hostname did not resolve to a public IP.")
+        raise DnsResolutionError("Hostname did not resolve to a public IP.")
 
     for resolved in resolved_addresses:
-        address = ipaddress.ip_address(resolved)
+        try:
+            address = ipaddress.ip_address(resolved)
+        except ValueError as exc:
+            raise DnsResolutionError("Resolver returned an invalid IP address.") from exc
         if _is_blocked_ip(address):
             raise UnsafeUrlError("Hostname resolved to a blocked IP.")
     return url

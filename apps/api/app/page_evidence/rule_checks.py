@@ -45,13 +45,17 @@ def build_rule_checks(pack: PageEvidencePack) -> list[RuleCheck]:
         )
     )
 
-    enough_content = pack.rule_check_inputs.word_count >= 150
+    enough_content = pack.rule_check_inputs.substance_score >= 150
     findings.append(
         RuleCheck(
-            rule_id="content.minimum_word_count",
+            rule_id="content.minimum_substance",
             severity="medium",
             status="passed" if enough_content else "warning",
-            finding=f"Detected approximately {pack.rule_check_inputs.word_count} words.",
+            finding=(
+                "Detected content substance score "
+                f"{pack.rule_check_inputs.substance_score} "
+                f"(words={pack.rule_check_inputs.word_count}, cjk_chars={pack.rule_check_inputs.cjk_char_count})."
+            ),
             evidence_refs=[block.evidence_ref for block in pack.content_blocks[:3]],
             recommendation=None if enough_content else "Add more substantive page content.",
         )

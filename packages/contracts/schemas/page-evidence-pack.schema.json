@@ -92,9 +92,11 @@
     },
     "rule_check_inputs": {
       "type": "object",
-      "required": ["word_count", "content_block_count", "heading_count", "has_json_ld"],
+      "required": ["word_count", "cjk_char_count", "substance_score", "content_block_count", "heading_count", "has_json_ld"],
       "properties": {
         "word_count": { "type": "integer", "minimum": 0 },
+        "cjk_char_count": { "type": "integer", "minimum": 0 },
+        "substance_score": { "type": "integer", "minimum": 0 },
         "content_block_count": { "type": "integer", "minimum": 0 },
         "heading_count": { "type": "integer", "minimum": 0 },
         "has_json_ld": { "type": "boolean" }
@@ -120,11 +122,14 @@
     },
     "fetchedResource": {
       "type": "object",
-      "required": ["url", "reachable", "evidence_ref"],
+      "required": ["url", "reachable", "status", "evidence_ref"],
       "properties": {
         "url": { "type": "string", "format": "uri" },
         "status_code": { "type": ["integer", "null"] },
         "reachable": { "type": "boolean" },
+        "status": {
+          "enum": ["present", "missing", "forbidden", "redirect", "server_error", "request_failed"]
+        },
         "error_code": { "type": ["string", "null"] },
         "evidence_ref": { "type": "string" }
       }

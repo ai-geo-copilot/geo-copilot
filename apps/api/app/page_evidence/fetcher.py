@@ -104,18 +104,54 @@ class PageFetcher:
         try:
             validate_public_url(resource_url, resolver=self._resolver)
             response = self._client.get(resource_url, follow_redirects=False, timeout=self._timeout_seconds)
+        except httpx.TimeoutException:
+            return FetchedResource(
+                url=resource_url,
+                reachable=False,
+                status="request_failed",
+                error_code="request_failed",
+                evidence_ref=evidence_ref,
+            )
         except (httpx.HTTPError, FetchError):
             return FetchedResource(
                 url=resource_url,
                 reachable=False,
+                status="request_failed",
                 error_code="request_failed",
                 evidence_ref=evidence_ref,
             )
 
+        status_code = response.status_code
+        if status_code == 200:
+            status_name = "present"
+            reachable = True
+            error_code = None
+        elif status_code == 403:
+            status_name = "forbidden"
+            reachable = False
+            error_code = "forbidden"
+        elif status_code == 404:
+            status_name = "missing"
+            reachable = False
+            error_code = "not_found"
+        elif 300 <= status_code < 400:
+            status_name = "redirect"
+            reachable = False
+            error_code = "redirect_not_followed"
+        elif status_code >= 500:
+            status_name = "server_error"
+            reachable = False
+            error_code = "server_error"
+        else:
+            status_name = "request_failed"
+            reachable = False
+            error_code = "unexpected_status"
+
         return FetchedResource(
             url=resource_url,
-            status_code=response.status_code,
-            reachable=response.status_code < 500,
-            error_code=None if response.status_code < 500 else "server_error",
+            status_code=status_code,
+            reachable=reachable,
+            status=status_name,
+            error_code=error_code,
             evidence_ref=evidence_ref,
         )

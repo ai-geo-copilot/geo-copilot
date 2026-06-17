@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, HttpUrl
 
 from ..page_evidence import PageEvidenceService
@@ -8,11 +8,8 @@ from ..page_evidence.models import AnalysisResult, PageEvidencePack, RuleCheck
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
-_service = PageEvidenceService()
-
-
-def get_analysis_service() -> PageEvidenceService:
-    return _service
+def get_analysis_service(request: Request) -> PageEvidenceService:
+    return request.app.state.page_evidence_service
 
 
 class AnalysisCreateRequest(BaseModel):

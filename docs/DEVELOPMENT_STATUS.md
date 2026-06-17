@@ -64,9 +64,9 @@
 
 当前状态：
 
-- 接口仍为 Sprint 0 占位实现
-- `POST /api/analyses` 返回 `queued`
-- 尚未执行真实 URL 抓取、解析、规则检查或持久化
+- `POST /api/analyses` 已接入同步 Page Evidence 最小分析闭环
+- 当前仍未完成 Page Evidence v1 全量能力与正式解析栈升级
+- 当前分析结果以文件快照持久化，不依赖数据库落库
 
 ### 3.3 Frontend scaffold
 
@@ -167,13 +167,15 @@
 
 当前状态：
 
-- GitHub CLI 已登录账号 `Euroish`
+- GitHub CLI 当前认证已失效，重新登录时曾出现 GitHub API `EOF`
 - `https://github.com/ai-geo-copilot` 已确认为 GitHub organization，不是仓库地址
 - organization 下原先无仓库
 - 已创建远端仓库 `https://github.com/ai-geo-copilot/geo-copilot`
 - 本地 git 仓库已初始化为 `main`
 - remote `origin` 指向 `https://github.com/ai-geo-copilot/geo-copilot.git`
 - 初始 scaffold 已推送到 `origin/main`
+- 本地已创建提交 `6779146 Implement page evidence v1 scaffold`
+- 当前环境尚未把该提交成功推送到远端，原因是 GitHub TLS / auth 问题
 - 已从 git 中移除 TypeScript 生成文件 `apps/web/tsconfig.tsbuildinfo`
 - `.gitignore` 已补充 `*.tsbuildinfo`
 
@@ -206,9 +208,8 @@
 验证结果：
 
 - 两份过程文档都指向相同问题：旧正式文档对 RAG、pgvector、双模型路径和重抓取层存在前置化倾向
-- 当前代码实际仍处于占位阶段，`POST /api/analyses` 返回 `queued`
-- 当前 `page-evidence-pack.schema.json` 仍是 v0 占位结构
-- 因此正式文档已统一回收到 Page Evidence v1 优先的 evidence-first 路线
+- 当时代码实际仍处于占位阶段，`POST /api/analyses` 返回 `queued`
+- 当前正式文档已统一回收到 Page Evidence v1 优先的 evidence-first 路线
 
 ### 4.3 Page Evidence 最小闭环验证（2026-06-17）
 
@@ -226,6 +227,22 @@
   - 能生成基础规则检查
   - 能写入分析快照目录
 - `compileall` 通过
+
+### 4.4 Page Evidence P0 hardening 验证（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- `pytest`：11 passed
+- 已验证 DNS 失败返回稳定 `dns_resolution_failed`
+- 已验证 non-HTML、超大 body、过多重定向、重定向到私网 IP 的抓取错误路径
+- 已验证中文页面会生成 `cjk_char_count` 与 `substance_score`
+- 已移除 `PageEvidenceService.analyze()` 的重复 snapshot 双写
+- API service 生命周期已切到 FastAPI lifespan 管理
 
 ## 5. 当前关键决策
 
@@ -330,12 +347,14 @@ DeepSeek 暂不作为事实来源。
 - 模块骨架与基础编排已落地
 - 基础 URL 安全校验、抓取、解析、规则检查和快照存储已打通
 - 基础测试已覆盖 mock 抓取成功路径和 unsafe URL 失败路径
+- 已补 DNS 异常、非 HTML、超大 body、过多重定向、私网重定向与中文内容计数测试
 
 下一步仍需补强：
 
 - 用正式实现替换当前标准库解析器，验证 `selectolax` / `trafilatura` / `extruct`
 - 补更多 HTML fixture，覆盖非 HTML、重定向、薄内容、多 H1、缺 metadata 等场景
 - 继续细化 `evidence_ref` 稳定性和规则集口径
+- 视解析栈升级结果再冻结辅助文件状态与 structured data 粒度
 
 ### 6.2 API integration
 

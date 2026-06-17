@@ -21,6 +21,7 @@ class FetchedResource(BaseModel):
     url: str
     status_code: int | None = None
     reachable: bool
+    status: Literal["present", "missing", "forbidden", "redirect", "server_error", "request_failed"]
     error_code: str | None = None
     evidence_ref: str
 
@@ -97,6 +98,8 @@ class StructuredDataEvidence(BaseModel):
 
 class RuleCheckInputs(BaseModel):
     word_count: int
+    cjk_char_count: int
+    substance_score: int
     content_block_count: int
     heading_count: int
     has_json_ld: bool

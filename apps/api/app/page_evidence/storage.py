@@ -11,6 +11,9 @@ class SnapshotStorage:
     def __init__(self, root_dir: Path | None = None) -> None:
         self._root_dir = root_dir or Path(__file__).resolve().parents[4] / "data" / "analyses"
 
+    def get_snapshot_dir(self, analysis_id: UUID) -> Path:
+        return self._root_dir / str(analysis_id)
+
     def save(
         self,
         analysis_id: UUID,
@@ -20,7 +23,7 @@ class SnapshotStorage:
         rule_checks: list[RuleCheck],
         result: AnalysisResult,
     ) -> str:
-        snapshot_dir = self._root_dir / str(analysis_id)
+        snapshot_dir = self.get_snapshot_dir(analysis_id)
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         (snapshot_dir / "raw.html").write_text(html, encoding="utf-8")
         (snapshot_dir / "clean.md").write_text(clean_markdown, encoding="utf-8")

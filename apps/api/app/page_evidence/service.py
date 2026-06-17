@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+import re
 import httpx
 
 from .errors import PageEvidenceError
@@ -28,6 +29,8 @@ class PageEvidenceService:
 
     def close(self) -> None:
         self._fetcher.close()
+        if self._client is not None:
+            self._client.close()
 
     def analyze(self, url: str, language: str) -> AnalysisResult:
         analysis_id = uuid4()
@@ -53,35 +56,29 @@ class PageEvidenceService:
             structure=parsed.structure,
             structured_data=parsed.structured_data,
             content_blocks=parsed.content_blocks,
-            rule_check_inputs=RuleCheckInputs(
-                word_count=sum(len(block.text.split()) for block in parsed.content_blocks),
-                content_block_count=len(parsed.content_blocks),
-                heading_count=len(parsed.structure.headings),
-                has_json_ld=bool(parsed.structured_data.json_ld),
-            ),
+            rule_check_inputs=_build_rule_check_inputs(parsed.content_blocks, parsed.structure.headings, parsed.structured_data.json_ld),
             storage=StorageEvidence(analysis_id=analysis_id, snapshot_dir=""),
         )
         rule_checks = build_rule_checks(pack)
-        provisional_result = AnalysisResult(
+        snapshot_dir = str(self._storage.get_snapshot_dir(analysis_id))
+        pack.storage.snapshot_dir = snapshot_dir
+        result = AnalysisResult(
             id=analysis_id,
             input_url=url,
             status="completed",
             language=language,
             page_evidence=pack,
             rule_checks=rule_checks,
-            snapshot_dir=None,
+            snapshot_dir=snapshot_dir,
         )
-        snapshot_dir = self._storage.save(
+        self._storage.save(
             analysis_id,
             fetched.html,
             parsed.clean_markdown,
             pack,
             rule_checks,
-            provisional_result,
+            result,
         )
-        pack.storage.snapshot_dir = snapshot_dir
-        result = provisional_result.model_copy(update={"snapshot_dir": snapshot_dir, "page_evidence": pack})
-        self._storage.save(analysis_id, fetched.html, parsed.clean_markdown, pack, rule_checks, result)
         return result
 
     def analyze_safe(self, url: str, language: str) -> AnalysisResult:
@@ -98,3 +95,18 @@ class PageEvidenceService:
 
     def get_result(self, analysis_id: UUID) -> AnalysisResult | None:
         return self._storage.load_result(analysis_id)
+
+
+def _build_rule_check_inputs(content_blocks, headings, structured_items) -> RuleCheckInputs:
+    block_text = "\n".join(block.text for block in content_blocks)
+    word_count = len(re.findall(r"\b\w+\b", block_text, flags=re.UNICODE))
+    cjk_char_count = len(re.findall(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", block_text))
+    substance_score = max(word_count, cjk_char_count)
+    return RuleCheckInputs(
+        word_count=word_count,
+        cjk_char_count=cjk_char_count,
+        substance_score=substance_score,
+        content_block_count=len(content_blocks),
+        heading_count=len(headings),
+        has_json_ld=bool(structured_items),
+    )

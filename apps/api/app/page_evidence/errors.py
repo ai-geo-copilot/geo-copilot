@@ -10,6 +10,10 @@ class UnsafeUrlError(PageEvidenceError):
     error_code = "unsafe_url"
 
 
+class DnsResolutionError(PageEvidenceError):
+    error_code = "dns_resolution_failed"
+
+
 class FetchError(PageEvidenceError):
     error_code = "fetch_failed"
 
