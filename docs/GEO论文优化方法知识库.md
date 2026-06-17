@@ -1,9 +1,9 @@
 # GEO 论文优化方法知识库
 
 状态：knowledge-base-source  
-最后更新：2026-06-14  
-来源：`GEO论文对话摘录.md` 中列出的论文与 DeepSeek 官方文档  
-用途：沉淀可检索、可引用、可转成 `method_chunks` 的 GEO 优化方法，并定义 DeepSeek 如何把网页抽象为 GEO 语言。
+最后更新：2026-06-17  
+来源：已筛选 GEO 相关论文与 DeepSeek 官方文档  
+用途：沉淀可引用、可转成种子方法卡片或后续 `method_chunks` 的 GEO 优化方法来源。
 
 ## 1. 使用边界
 
@@ -26,7 +26,13 @@ DeepSeek 负责结构化归纳、诊断和资产草案
 Validator 负责校验输出
 ```
 
-DeepSeek 可以把网页抽象成 GEO 形式，但正确做法不是让 DeepSeek 直接访问 URL。应由 API 先抓取和解析网页，生成 `PageEvidencePack`，再让 DeepSeek 在 JSON Output 模式下把页面事实转换为 `GeoSemanticReadout`。
+当前项目对本知识库的正确消费方式是：
+
+- 先把页面变成 `PageEvidencePack` 和 `RuleChecks`。
+- 再从本知识库提炼种子方法卡片。
+- 后续需要模型诊断时，再把相关方法卡片作为 `GEO_METHODS` 传给模型。
+
+`GeoSemanticReadout` 可以作为未来研究方向，但不是当前主链路前置。
 
 ## 2. 来源分级
 
@@ -100,16 +106,16 @@ DeepSeek 可以把网页抽象成 GEO 形式，但正确做法不是让 DeepSeek
 - DeepSeek 输出每条问题、建议、资产草案都必须引用 `evidence_ref` 和 `method_ref`。
 - 缺证据时必须输出 `unknown`，不能补写事实。
 
-### 3.5 RAG 是本项目的系统边界，不是附加功能
+### 3.5 方法知识必须进入诊断链路，但不必先上复杂 RAG
 
 `paper_rag_2020` 的系统启发是：知识密集型生成不应只依赖模型参数，应该把可更新、可检查的外部知识作为上下文输入。
 
 对本项目的含义：
 
-- GEO 方法知识库必须在 DeepSeek 调用前检索。
+- GEO 方法知识必须在诊断链路中出现。
 - Page Evidence 不能和 Method Knowledge 混成一个无边界 prompt。
-- 检索结果必须 top-k、短 chunk、带来源和用途。
-- 需要记录检索 query、命中 chunk、最终传给模型的方法包。
+- 当前阶段可以先用种子方法卡片和 deterministic selector。
+- 当方法规模和召回难度增长后，再升级为 top-k 检索、短 chunk 和更完整的 retrieval traces。
 
 ### 3.6 GEO 监测不能只测一次
 
@@ -435,150 +441,88 @@ DeepSeek 可以把网页抽象成 GEO 形式，但正确做法不是让 DeepSeek
 - `evidence_required`: `prompt_pack`, `output_schema`
 - `anti_pattern`: 不要依赖纯自然语言报告作为 API 输出。
 
-## 5. DeepSeek 网页 GEO 抽象设计
+## 5. 当前落地方式
 
-### 5.1 能不能做到
+### 5.1 当前主链路
 
-可以做到，但分工必须正确：
+本知识库当前推荐服务于以下链路：
 
 ```text
 URL
 -> Fetcher / Parser / Rule Check
 -> PageEvidencePack
--> DeepSeek Geo Abstraction JSON
--> Method Retriever
--> DeepSeek Diagnosis JSON
+-> MethodSelector
+-> Selected Methods
+-> DeepSeek Diagnosis
 -> Validator / Report Builder
 ```
 
-DeepSeek 不应直接“读取网页”。它读取的是 API 抽出来的网页证据，并把证据翻译成 GEO 语言。
+关键点：
 
-### 5.2 GeoSemanticReadout Schema
+- DeepSeek 不直接读取网页。
+- 当前先让模型消费事实和方法，而不是先做网页 GEO 抽象。
+- 这份知识文档当前首先要被转成种子方法卡片，而不是直接全文塞入 prompt。
 
-`GeoSemanticReadout` 是 DeepSeek 对网页的第一层 GEO 抽象，位于 `PageEvidencePack` 和 `DeepSeekDiagnosis` 之间。
-
-```json
-{
-  "page_ref": "analysis_id_or_url_hash",
-  "page_type": "generic | product | article | docs | landing | comparison | unknown",
-  "primary_entity": {
-    "name": "",
-    "type": "organization | product | person | concept | unknown",
-    "evidence_ref": ""
-  },
-  "query_intents": [
-    {
-      "intent": "definition | comparison | purchase | troubleshooting | how_to | research | unknown",
-      "confidence": 0,
-      "evidence_ref": ""
-    }
-  ],
-  "selection_layer": {
-    "crawl_access": "pass | risk | fail | unknown",
-    "entity_clarity": "strong | partial | weak | unknown",
-    "authority_signals": [],
-    "blockers": []
-  },
-  "absorption_layer": {
-    "answer_ready_summary": "present | weak | missing | unknown",
-    "evidence_density": "strong | partial | weak | unknown",
-    "semantic_alignment": "strong | partial | weak | unknown",
-    "structural_legibility": "strong | partial | weak | unknown",
-    "blockers": []
-  },
-  "geo_units": [
-    {
-      "unit_id": "geo_unit_001",
-      "unit_type": "definition | claim | evidence | statistic | quote | comparison | procedure | faq | summary",
-      "source_refs": [],
-      "claim": "",
-      "support_state": "full_support | partial_support | no_support | unknown",
-      "reuse_value": "high | medium | low",
-      "missing_fields": []
-    }
-  ],
-  "failure_signals": [
-    {
-      "failure_type": "crawler_blocked | weak_entity | missing_schema | weak_evidence | poor_structure | low_citability | missing_summary | no_faq",
-      "severity": "high | medium | low",
-      "evidence_ref": "",
-      "why": ""
-    }
-  ],
-  "retrieval_query_plan": {
-    "base_required": true,
-    "page_type": "",
-    "detected_failures": [],
-    "target_assets": [],
-    "language": "zh-CN"
-  },
-  "unknowns": []
-}
-```
-
-### 5.3 DeepSeek GEO 抽象 Prompt
-
-System:
-
-```text
-You are GEO Copilot's page abstraction engine. Read PAGE_EVIDENCE only. Convert page facts into GEO language. Return valid JSON only. Do not diagnose yet, do not invent facts, and write unknown when evidence is missing. Every inferred field must cite evidence_ref.
-```
-
-User:
+### 5.2 当前推荐方法卡片结构
 
 ```json
 {
-  "task": "Convert PAGE_EVIDENCE into GeoSemanticReadout JSON. Focus on citation selection, citation absorption, entity clarity, answer-ready units, claim-evidence support, and structural GEO signals.",
-  "PAGE_EVIDENCE": {},
-  "OUTPUT_SCHEMA": {}
+  "method_ref": "chunk_geo_claim_evidence_pair_001",
+  "source_ref": "paper_verifiability_2023",
+  "method_type": "asset_pattern",
+  "page_type": ["generic"],
+  "failure_type": ["weak_evidence", "low_citability"],
+  "asset_type": ["claim_evidence_block"],
+  "trust_level": "high",
+  "text": "...",
+  "action_pattern": "...",
+  "anti_pattern": "..."
 }
 ```
 
-### 5.4 何时调用 DeepSeek 抽象
+### 5.3 可选研究项
 
-第一阶段建议两次模型调用：
+`GeoSemanticReadout` 仍然可以保留为后续研究方向，但不是当前实现前置。只有在以下情况同时成立时，再考虑加入：
 
-1. `PageEvidencePack -> GeoSemanticReadout`
-2. `GeoSemanticReadout + RuleChecks + GEO_METHODS -> DeepSeekDiagnosis`
+- `PageEvidencePack` 和 `RuleChecks` 已稳定。
+- 现有 selector 无法表达复杂 GEO 语义。
+- 第二次模型调用能带来可量化收益。
 
-如果要省成本，可以先由规则引擎生成粗略 `GeoSemanticReadout`，只在页面复杂、内容多、claim/evidence 难判断时调用 DeepSeek。
+## 6. 当前选择策略与后续检索演进
 
-### 5.5 抽象层必须遵守的约束
+### 6.1 当前阶段
 
-- 所有字段必须来自 `PageEvidencePack`。
-- 每个 `geo_unit` 必须有 `source_refs`。
-- 每个推断必须有 `evidence_ref`。
-- 不生成优化建议，只做 GEO 读法。
-- 不把缺失字段补成事实。
-- 不承诺搜索排名或 AI 引用提升。
-- 对不确定页面类型、实体、证据支持状态写 `unknown`。
+当前优先使用四类选择信号：
 
-## 6. 检索策略更新
+1. `base_rubric`：crawl access、entity clarity、structured data、citability、evidence support、answer readiness。
+2. `page_type`：product、article、docs、landing、comparison。
+3. `failure_methods`：根据 `RuleChecks` 命中的 failure types 选择。
+4. `output_guardrails`：JSON、evidence_ref、method_ref、unknown、禁止排名承诺。
 
-当前 `GEO_METHODS` 检索建议加入四类固定召回：
-
-1. `base_rubric`: crawl access、entity clarity、structured data、citability、evidence support、answer readiness。
-2. `paper_methods`: statistics、citations、quotations、fluency、structure、evidence-container。
-3. `failure_methods`: 根据 `GeoSemanticReadout.failure_signals` 检索。
-4. `output_guardrails`: JSON、evidence_ref、method_ref、unknown、禁止排名承诺。
-
-推荐检索输入：
+推荐 selector 输入：
 
 ```json
 {
   "page_type": "product",
-  "selection_blockers": ["weak_entity", "missing_schema"],
-  "absorption_blockers": ["weak_evidence", "missing_summary"],
-  "geo_units_present": ["claim", "procedure"],
-  "geo_units_missing": ["definition", "statistic", "comparison"],
+  "detected_failures": ["missing_schema", "weak_evidence"],
   "target_assets": ["summary", "claim_evidence_block", "json_ld"],
   "language": "zh-CN"
 }
 ```
 
-## 7. 第一批入库优先级
+### 6.2 后续阶段
 
-P0 必须入库：
+当方法卡片规模增长后，再升级为：
+
+- metadata filter
+- keyword recall
+- vector recall
+- top-k method pack
+- retrieval traces
+
+## 7. 第一批种子方法优先级
+
+P0 必须先转成种子方法卡片：
 
 - `chunk_geo_source_citation_001`
 - `chunk_geo_statistics_001`
@@ -589,7 +533,7 @@ P0 必须入库：
 - `chunk_geo_rag_traceability_001`
 - `chunk_geo_output_guardrail_001`
 
-P1 建议入库：
+P1 建议继续补充：
 
 - `chunk_geo_quotation_001`
 - `chunk_geo_fluency_readability_001`
@@ -602,7 +546,7 @@ P1 建议入库：
 - `chunk_geo_meso_structure_001`
 - `chunk_geo_semantic_preservation_001`
 
-P2 后续入库：
+P2 后续再扩充：
 
 - `chunk_geo_micro_structure_001`
 - `chunk_geo_faq_caution_001`
@@ -611,30 +555,23 @@ P2 后续入库：
 
 ## 8. 对现有项目文档的影响
 
-现有架构判断保持不变：
+当前正式文档应保持以下一致结论：
 
-- DeepSeek 是反馈模型，不是事实来源。
+- DeepSeek 是诊断模型，不是事实来源。
 - Page Evidence 和 GEO Methods 必须分离。
-- GEO 方法知识库必须进入主链路。
+- 方法知识必须进入诊断链路。
+- 当前先做种子方法卡片和 selector，不把复杂 RAG 写成 M1 前置。
 - 输出必须是可校验 JSON。
-
-新增建议：
-
-- 在 `PageEvidencePack` 后增加可选 `GeoSemanticReadout`。
-- Method Retriever 的 query 不只来自 rule checks，也来自 `GeoSemanticReadout.selection_layer` 和 `GeoSemanticReadout.absorption_layer`。
-- 报告 UI 可以分别展示 `selection blockers` 和 `absorption blockers`，让用户知道问题是“进不去候选来源”还是“进去了也不被答案吸收”。
 
 ## 9. 最终判断
 
-DeepSeek 对网页抽象成 GEO 形式可以做，且很适合本项目。
-
-但必须按以下方式做：
+当前最优做法不是先做复杂 RAG，也不是先做双模型抽象，而是：
 
 ```text
 先确定性抓取网页事实
-再让 DeepSeek 把事实抽象为 GEO 语义单元
-再检索 GEO 方法知识库
-最后让 DeepSeek 输出诊断和资产草案
+再输出 PageEvidencePack 和 RuleChecks
+再从本知识库选择少量高相关方法
+最后在需要时让 DeepSeek 输出诊断和资产草案
 ```
 
-这样既能让模型“以 GEO 的语言读取网页”，也能避免模型直接访问网页、编造页面事实或输出泛泛 SEO 建议。
+这样既保留了 GEO 方法论的价值，也不会把当前主链路压到尚未稳定的检索和模型抽象步骤上。

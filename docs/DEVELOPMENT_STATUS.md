@@ -1,39 +1,43 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-15  
+最后更新：2026-06-17  
 唯一开发记录源：是
 
 ## 1. 使用规则
 
-本文件是当前仓库开发状态、决策、已验证结果和下一步工作的唯一记录源。
+本文件是当前仓库开发状态、已验证结果、活跃优先级、阻塞和下一步工作的唯一记录源。
 
 更新要求：
 
-- 每次完成代码、接口、数据库、架构或验收状态变化后，必须更新本文件。
+- 每次完成代码、接口、数据库、架构、文档基线或验收状态变化后，必须更新本文件。
 - 只记录已验证事实、明确决策、当前阻塞和下一步。
 - 不用聊天记录、临时口头约定或散落 TODO 作为开发状态依据。
-- 产品和架构原始设计仍以 `docs/GEO项目总纲.md`、`docs/GEO实施路线与架构决策.md`、`docs/GEO五人团队分工协作与验收标准.md` 为准。
-- 仓库级 `AGENTS.md` 已要求后续 agent 在开始开发前读取本文件，并在完成开发后回写本文件。
-- 项目设计文档统一从 `docs/README.md` 进入；设计文档存放在 `docs/`，不在仓库根目录重复存放。
+- 项目设计文档统一从 `docs/README.md` 进入。
+- `docs/开发过程中文件/` 只作为讨论归档，不作为正式设计和优先级依据。
 
 ## 2. 当前总体阶段
 
-当前阶段：Sprint 0 scaffold 已完成，准备进入完整 Page Evidence + Rule Engine 开发。
+当前阶段：Sprint 0 scaffold 已完成；2026-06-17 已完成正式文档基线重构；准备进入完整 Page Evidence v1 开发。
 
 当前优先级：
 
 1. 完整开发 `apps/api/app/page_evidence`
-2. 将 `/api/analyses` 从占位接口升级为真实单 URL 分析入口
-3. 输出稳定 `PageEvidencePack`、`RuleChecks` 和基础规则报告
+2. 将 `POST /api/analyses` 从占位接口升级为真实单 URL 分析入口
+3. 冻结 `PageEvidencePack v1`、`RuleChecks v1` 和基础规则报告
 
 明确不优先：
 
 - 暂不接 DeepSeek
 - 暂不做完整前端报告页
-- 暂不做 RAG 入库和 hybrid retrieval
+- 暂不做 pgvector / hybrid retrieval
+- 暂不把 `GeoSemanticReadout` 作为当前主链路前置步骤
 
-原因：DeepSeek、RAG 和 Report UI 都依赖高质量页面证据包。
+原因：
+
+- DeepSeek、复杂检索和报告 UI 都依赖高质量页面证据包。
+- 当前代码仍停留在分析接口和证据契约的占位阶段。
+- 本轮文档决策已确认 MVP 先走 evidence-first 路线，而不是重 RAG 路线。
 
 ## 3. 已完成
 
@@ -60,7 +64,7 @@
 
 当前状态：
 
-- 接口为 Sprint 0 占位实现
+- 接口仍为 Sprint 0 占位实现
 - `POST /api/analyses` 返回 `queued`
 - 尚未执行真实 URL 抓取、解析、规则检查或持久化
 
@@ -82,8 +86,9 @@
 
 当前状态：
 
-- schema 是 v0 占位契约
-- Page Evidence 完整开发时需要扩展并冻结 v1
+- schema 仍是 v0 占位契约
+- `page-evidence-pack.schema.json` 仅覆盖非常粗的对象结构
+- Page Evidence 开发时需要扩展并冻结 v1
 
 ### 3.5 Database scaffold
 
@@ -99,21 +104,26 @@
 当前状态：
 
 - migration 尚未在本地 Postgres 上执行验证
-- 后续 Page Evidence 开发需要决定是否先落库，或先文件落盘再接数据库
+- 本轮文档决策已确认：Page Evidence v1 不以数据库落库为前置条件
 
-### 3.6 Docs
+### 3.6 Docs baseline refresh
 
-项目设计文档统一存放在 `docs/`：
+已在 2026-06-17 重写并对齐以下正式文档：
 
+- `docs/README.md`
 - `docs/GEO项目总纲.md`
 - `docs/GEO实施路线与架构决策.md`
 - `docs/GEO架构技术栈与工具整合建议.md`
-- `docs/GEO论文优化方法知识库.md`
 - `docs/GEO五人团队分工协作与验收标准.md`
+- `docs/GEO论文优化方法知识库.md`
 
-`docs/README.md` 是项目设计文档唯一读取入口。
+已确认的文档级决策：
 
-根目录重复 GEO 设计文档已删除；根目录只保留仓库入口 `README.md` 和 agent 指令入口 `AGENTS.md`。
+- 正式架构切回 evidence-first 路线
+- `docs/开发过程中文件/` 只作参考，不作事实源
+- Page Evidence v1 先走文件快照存储
+- 方法阶段先用种子卡片和 deterministic selector
+- `GeoSemanticReadout` 保留为后续研究项，不是当前主链路
 
 ### 3.7 Git / GitHub
 
@@ -139,7 +149,7 @@
 
 ## 4. 已验证
 
-验证时间：2026-06-15
+### 4.1 代码基线验证（2026-06-15）
 
 通过：
 
@@ -154,6 +164,22 @@
 - 已将 Next 从 `16.0.7` 升级到 `16.2.9`
 - 当前 npm 给出的自动修复会降级到 Next 9，不适合采用
 
+### 4.2 文档与现状核对（2026-06-17）
+
+执行命令：
+
+- `Get-Content -Raw docs/开发过程中文件/对话AI GEO助手设计.md`
+- `Get-Content -Raw docs/开发过程中文件/开发方案临时讨论.md`
+- `Get-Content -Raw apps/api/app/routers/analyses.py`
+- `Get-Content -Raw packages/contracts/schemas/page-evidence-pack.schema.json`
+
+验证结果：
+
+- 两份过程文档都指向相同问题：旧正式文档对 RAG、pgvector、双模型路径和重抓取层存在前置化倾向
+- 当前代码实际仍处于占位阶段，`POST /api/analyses` 返回 `queued`
+- 当前 `page-evidence-pack.schema.json` 仍是 v0 占位结构
+- 因此正式文档已统一回收到 Page Evidence v1 优先的 evidence-first 路线
+
 ## 5. 当前关键决策
 
 ### 5.1 第一个完整模块
@@ -167,30 +193,57 @@
 - Report UI 展示依赖稳定 evidence refs
 - 该模块质量直接决定后续诊断质量
 
-### 5.2 DeepSeek 角色
+### 5.2 Page Evidence v1 存储策略
+
+当前决定：
+
+> 先落文件快照，不把数据库落库作为 M1 前置条件。
+
+推荐产物：
+
+- `raw.html`
+- `clean.md`
+- `evidence.json`
+- `rule_checks.json`
+
+### 5.3 方法知识策略
+
+当前决定：
+
+> 先使用种子方法卡片和 deterministic selector，不默认上 pgvector。
+
+说明：
+
+- 当前方法规模仍可人工维护
+- 先建立稳定 `method_ref`
+- 向量检索留到后续有规模和评估压力时再接入
+
+### 5.4 DeepSeek 角色
 
 DeepSeek 暂不作为事实来源。
 
 后续只接收：
 
 - `PAGE_EVIDENCE`
-- `GEO_SEMANTIC_READOUT`
 - `RULE_CHECKS`
 - `GEO_METHODS`
 - `OUTPUT_SCHEMA`
 
-### 5.3 当前模块边界
+### 5.5 `GeoSemanticReadout` 位置
 
-Page Evidence 模块应完整包含：
+当前决定：
 
-- URL Safety Validator
-- HTTP Fetcher
-- auxiliary fetch for robots / sitemap / llms files
-- HTML Parser
-- Page GEO Decomposer
-- Rule Check Engine
-- PageEvidencePack JSON 输出
-- 基础规则报告输出
+> `GeoSemanticReadout` 可作为后续研究项，但不是当前主链路前置步骤。
+
+当前主链路先依赖确定性 `PageEvidencePack` 与 `RuleChecks`。
+
+### 5.6 文档治理
+
+当前决定：
+
+- `docs/README.md` 是正式文档入口
+- `docs/开发过程中文件/` 不参与正式冲突裁决
+- 变更架构、范围、流程或优先级时必须同步更新正式文档和本状态文件
 
 ## 6. 下一步开发任务
 
@@ -202,23 +255,26 @@ Page Evidence 模块应完整包含：
 
 建议文件：
 
+- `models.py`
+- `errors.py`
 - `url_safety.py`
 - `fetcher.py`
 - `parser.py`
-- `decomposer.py`
+- `structured_data.py`
+- `content_blocks.py`
 - `rule_checks.py`
-- `models.py`
+- `storage.py`
 - `service.py`
 
 验收标准：
 
-- 拦截 localhost、私网、回环、链路本地、metadata IP
+- 拦截 localhost、私网、回环、链路本地、metadata IP 和保留地址
 - 只允许 `http` / `https`
 - 支持重定向限制、超时限制、响应大小限制
 - 拒绝非 HTML 主响应
-- 能提取 title、description、canonical、lang、heading、正文块、JSON-LD、links、images
+- 能提取 title、description、canonical、lang、heading、正文块、JSON-LD、links、images、tables
 - 能检查 robots.txt、sitemap.xml、llms.txt、llms-full.txt
-- 每个内容块有稳定 `evidence_ref`
+- 每个字段和内容块有稳定 `evidence_ref`
 - 无 DeepSeek 时也能生成基础规则报告
 - 单元测试覆盖安全 URL、抓取异常、HTML 解析、规则检查
 
@@ -234,33 +290,45 @@ Page Evidence 模块应完整包含：
 - 返回真实分析状态和基础报告
 - 失败时返回稳定 `error_code`
 
-是否异步队列：
+### 6.3 Contract update
 
-- 当前先不引入外部队列
-- 可以同步执行或使用 FastAPI background task
-- 若单 URL 分析耗时明显影响体验，再引入任务队列
+目标文件：
+
+- `packages/contracts/schemas/page-evidence-pack.schema.json`
+
+目标：
+
+- 从 v0 占位结构扩展到可支撑 Page Evidence v1 的正式 schema
+
+### 6.4 Method prep
+
+目标：
+
+- 在 Page Evidence 稳定后准备 `geo_methods.seed.json`
+- 建立 `page_type`、`failure_type`、`asset_type` 的最小选择体系
 
 ## 7. 当前阻塞
 
 无明确阻塞。
 
-未决事项：
+当前待验证事项：
 
-- Page Evidence v1 是否先落库，还是先写 JSON 文件用于调试
-- HTML parser 具体采用 `selectolax`、`BeautifulSoup`、`trafilatura`、`extruct` 的组合
-- 是否在 Page Evidence v1 即加入 Playwright fallback
+- `selectolax`、`trafilatura`、`extruct` 的组合是否覆盖目标样本
+- 静态 HTML 抽取在目标页面上的有效覆盖率
+- 是否需要在 Page Evidence v1 结束前引入额外 fallback provider
 
 当前建议：
 
-- 先实现 HTTP HTML 抓取和静态解析
-- Playwright fallback 延后到静态 HTML 正文不足时再接入
+- 先实现安全静态抓取和解析
+- 用真实样本和 fixture 证明覆盖率后，再决定是否升级动态 fallback
 
 ## 8. 完成定义
 
 Page Evidence v1 完成必须满足：
 
 - API 能对真实 URL 产出 `PageEvidencePack`
+- 无 DeepSeek 时也能返回基础规则报告
 - 每个 finding 可引用 `evidence_ref`
-- 原始 HTML 和 clean text 有可追踪存储位置或明确不存储决策
+- 原始 HTML、clean text 和 evidence JSON 有可追踪快照
 - 单元测试和至少 3 个真实网页 fixture 测试通过
-- 本文件同步更新完成状态、验证命令和已知限制
+- 正式文档和本状态文件同步更新

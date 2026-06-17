@@ -1,25 +1,42 @@
-# GEO Project Documents
+# GEO 项目文档入口
 
-This file is the single entry point for project design documents.
+状态：active  
+最后更新：2026-06-17
 
-## Read Order
+本目录的正式设计文档以 `docs/` 根目录文件为准。`docs/开发过程中文件/` 仅保留讨论、推演和外部对话摘录，不作为架构、范围、优先级或验收口径的事实来源。
+
+## 推荐阅读顺序
 
 1. `DEVELOPMENT_STATUS.md`  
-   Current development status, verified work, active priority, blockers, and next task.
+   当前开发状态、已验证结果、活跃优先级、阻塞与下一步。实现优先级冲突时以本文件为准。
 2. `GEO项目总纲.md`  
-   Product definition, core chain, Page Evidence / GEO Methods separation, DeepSeek boundaries, output contract.
+   产品定义、当前范围、硬边界、阶段目标和非目标。
 3. `GEO实施路线与架构决策.md`  
-   Architecture, module boundaries, API flow, database model, implementation phases.
-4. `GEO五人团队分工协作与验收标准.md`  
-   Team ownership, collaboration rules, sprint plan, acceptance criteria, Definition of Done.
-5. `GEO架构技术栈与工具整合建议.md`  
-   Technical stack and tool integration notes.
+   当前架构、模块边界、阶段拆分、升级触发条件和关键工程决策。
+4. `GEO架构技术栈与工具整合建议.md`  
+   当前推荐技术选型、库选择、抓取/解析实现策略和暂不采用项。
+5. `GEO五人团队分工协作与验收标准.md`  
+   五人协作方式、阶段职责、提交流程、验收口径和 Definition of Done。
 6. `GEO论文优化方法知识库.md`  
-   GEO method knowledge source material for future RAG ingestion.
+   GEO 方法来源、稳定结论、种子方法卡片设计和后续方法库演进依据。
 
-## Storage Rule
+## 文档边界
 
-- Project design documents live under `docs/`.
-- Root-level `README.md` is the repository entry point.
-- Root-level `AGENTS.md` is the agent instruction entry point.
-- Do not duplicate project design Markdown files at the repository root.
+- `DEVELOPMENT_STATUS.md`：唯一开发状态源。
+- `GEO项目总纲.md`：产品定义和长期边界。
+- `GEO实施路线与架构决策.md`：当前推荐架构和阶段路线。
+- `GEO架构技术栈与工具整合建议.md`：实现层技术决策，不重复产品定义。
+- `GEO五人团队分工协作与验收标准.md`：团队流程，不替代架构决策。
+- `GEO论文优化方法知识库.md`：方法来源和卡片草案，不直接作为运行时 prompt 全量输入。
+
+## 冲突处理
+
+- 实现优先级、完成状态、阻塞：以 `DEVELOPMENT_STATUS.md` 为准。
+- 产品边界和非目标：以 `GEO项目总纲.md` 为准，除非 `DEVELOPMENT_STATUS.md` 明确记录了更新决策。
+- `docs/开发过程中文件/` 不参与冲突裁决。
+
+## 更新规则
+
+- 变更产品范围、架构、技术路线、流程或验收标准时，同步更新对应文档和 `DEVELOPMENT_STATUS.md`。
+- 只记录已确认决策，不把临时脑暴、外部对话或未验证假设直接写入正式文档。
+- 如果某份文档内容开始重复其他文档，应优先删重并明确边界，而不是继续叠加。

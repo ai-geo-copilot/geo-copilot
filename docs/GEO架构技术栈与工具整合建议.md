@@ -1,557 +1,273 @@
-# API-based GEO Copilot 产品架构设计与技术栈
+# GEO 架构技术栈与工具整合建议
 
 状态：active  
-最后更新：2026-06-14  
+最后更新：2026-06-17  
 前置文档：`GEO项目总纲.md`、`GEO实施路线与架构决策.md`
 
-## 1. 最终产品定义
+## 1. 技术选型原则
 
-本产品不是普通网页点评器，而是：
+当前技术路线遵循四条原则：
 
-> 使用 API 读取并拆解网页 GEO 字段，通过 GEO 方法知识库检索前沿做法，再让 DeepSeek API 输出结构化优化反馈的 AI Copilot。
+1. 安全边界自己控制。
+2. 通用解析能力优先复用成熟库。
+3. 当前阶段优先支持 Page Evidence v1，不为未来规模提前上重型基础设施。
+4. 每项引入的技术都要回答“现在为什么必须需要”。
 
-第一阶段只服务一个动作：
+## 2. 当前推荐技术栈
+
+| 领域 | 当前默认选择 | 当前不作为前置 |
+|---|---|---|
+| API | `FastAPI` + `Pydantic v2` | 工作流平台式后端 |
+| HTTP 抓取 | `httpx` + `dnspython` + `ipaddress` | 默认浏览器渲染、默认外部抓取服务 |
+| DOM 提取 | `selectolax` | 只靠正则或只靠 BeautifulSoup |
+| 正文提纯 | `trafilatura` | 自研正文算法 |
+| 结构化数据 | `extruct` | 只抽 JSON-LD 忽略其他结构化信号 |
+| 存储 | `data/analyses/{id}` 文件快照 | 当前阶段强依赖数据库 |
+| 测试 | `pytest` + fixture HTML | 只做手工临时验证 |
+| 方法选择 | 种子方法卡片 + deterministic selector | 直接上 pgvector / Qdrant |
+| 诊断模型 | DeepSeek JSON Output（后续阶段） | 让模型直接抓网页 |
+
+## 3. HTTP 抓取层建议
+
+### 3.1 客户端生命周期
+
+推荐使用应用级可复用 `httpx.AsyncClient`，由 FastAPI lifespan 管理。
+
+不要：
+
+- 每次请求新建短生命周期 client。
+- 为了“兼容差站点”默认关闭 TLS 校验。
+- 把自动跟随重定向作为默认路径。
+
+### 3.2 抓取方式
+
+推荐：
+
+- `stream()` 先看响应头，再增量读取 body。
+- 在 header 和 body 两层都限制响应大小。
+- 只接受 HTML 主响应。
+- 明确记录 status、headers、elapsed、sha256、redirect chain。
+
+### 3.3 SSRF 防护
+
+必须覆盖：
+
+- scheme 限制为 `http` / `https`。
+- 域名存在性检查。
+- A / AAAA 解析。
+- 私网、回环、链路本地、保留地址、metadata IP 拦截。
+- 每一跳重定向目标重新校验。
+
+### 3.4 辅助文件抓取
+
+与主页面解耦并发获取：
+
+- `/robots.txt`
+- `/sitemap.xml`
+- `/llms.txt`
+- `/llms-full.txt`
+
+这些抓取应当容错。主页面成功时，辅助文件 404 不应打断分析主流程。
+
+## 4. 解析层建议
+
+### 4.1 `selectolax`
+
+适合：
+
+- title、meta、canonical、lang、headings 提取。
+- links、images、tables、局部 DOM 块提取。
+- 建立稳定的块级 `evidence_ref`。
+
+### 4.2 `trafilatura`
+
+适合：
+
+- 去除导航、页脚、广告噪声。
+- 输出 clean text / markdown。
+- 为 RuleChecks 和后续模型上下文提供高密度文本。
+
+### 4.3 `extruct`
+
+适合：
+
+- JSON-LD
+- Microdata
+- RDFa
+- Open Graph 等结构化信息
+
+这比只手工扫 `script[type=\"application/ld+json\"]` 更完整。
+
+## 5. Page Evidence 输出建议
+
+当前阶段的 `PageEvidencePack` 至少要覆盖：
+
+- `input`
+- `fetch`
+- `metadata`
+- `crawl_access`
+- `structure`
+- `structured_data`
+- `content_blocks`
+- `rule_check_inputs`
+- `storage`
+
+其中最关键的是稳定引用：
+
+- 字段级 `evidence_ref`
+- 块级 `evidence_ref`
+
+没有引用能力，后面的 RuleChecks、MethodSelector 和 DeepSeekDiagnosis 都无法可追溯。
+
+## 6. 存储与调试建议
+
+当前建议：
 
 ```text
-输入 URL -> 输出 GEO 优化反馈
+data/analyses/{analysis_id}/
+  raw.html
+  clean.md
+  evidence.json
+  rule_checks.json
 ```
 
-## 2. 关键产品能力
+好处：
 
-### 2.1 API 读取页面
+- 调试直接。
+- fixture 对比简单。
+- schema 迭代成本低。
+- 不受当前数据库未验证状态阻塞。
 
-API 必须能自己完成：
+后续如果确实需要历史查询、共享状态或多用户，再引入数据库持久化。
 
-- URL 安全校验。
-- HTML 抓取。
-- robots.txt / sitemap / llms.txt 检查。
-- HTML meta / heading / schema / body 提取。
-- 正文分块。
-- GEO 字段拆解。
+## 7. 方法库技术路线
 
-### 2.2 GEO 方法检索
-
-API 必须在调用 DeepSeek 前检索相关方法：
-
-- 基础 GEO rubric。
-- 页面类型策略。
-- failure-specific 方法。
-- 资产模板。
-- 报告措辞规则。
-
-### 2.3 DeepSeek 结构化反馈
-
-DeepSeek 只在拿到以下上下文后输出：
-
-- `PAGE_EVIDENCE`
-- `RULE_CHECKS`
-- `GEO_METHODS`
-- `OUTPUT_SCHEMA`
-
-输出必须是 JSON，并且每条建议都要引用：
-
-- `evidence_ref`
-- `method_ref`
-
-### 2.4 Copilot 追问
-
-用户可以继续问：
-
-- 为什么这个分数低？
-- 先改哪三项？
-- 帮我生成 FAQ。
-- 帮我生成 JSON-LD。
-- 帮我生成 answer-ready summary。
-
-追问同样必须基于当前页面证据和方法知识。
-
-## 3. 推荐技术栈
-
-### 3.1 前端
+### 7.1 当前阶段
 
 推荐：
 
-- `Next.js`
-- `TypeScript`
-- `Tailwind CSS`
-- `shadcn/ui` 可选
+- `geo_methods.seed.json`
+- `selector.py`
+- metadata 过滤
+- 规则映射
+- 少量关键词补充
 
-前端页面：
+理由：
 
-- URL 输入。
-- 分析进度。
-- 报告展示。
-- 证据展开。
-- 方法依据展开。
-- Copilot 追问。
+- 方法规模初期不大。
+- 可解释性强。
+- 调试和人工 review 更直接。
 
-### 3.2 后端
+### 7.2 后续阶段
 
-推荐：
-
-- `FastAPI`
-- `Python 3.12+`
-- `Pydantic`
-- `SQLAlchemy`
-- `httpx`
-- `selectolax` 或 `BeautifulSoup`
-- `trafilatura`
-- `extruct`
-- `dnspython`
-- `ipaddress`
-
-原因：
-
-- Python 适合页面解析、文本处理、embedding、LLM 编排。
-- FastAPI 适合快速暴露结构化 API。
-- Pydantic 适合约束 PageEvidencePack、RetrievedMethodPack、DeepSeekDiagnosis。
-
-### 3.3 数据库与向量检索
-
-推荐：
+当方法卡片规模增长并且 golden queries 证明召回不稳定时，再升级到：
 
 - `Postgres`
 - `pgvector`
-- Postgres full-text search
+- full-text search
+- hybrid retrieval
 
-Embedding：
+当前不把这条链路写成 M1 的技术前置。
 
-- `BAAI/bge-m3` 或同类多语言 embedding。
+## 8. DeepSeek 接入建议
 
-不建议第一阶段：
+DeepSeek 只在后续阶段接入，且只消费结构化输入：
 
-- 直接上 Qdrant。
-- 直接上图数据库。
-- 把方法知识存在纯文件里，每次全量塞 prompt。
-
-### 3.4 DeepSeek API
+```text
+PAGE_EVIDENCE
+RULE_CHECKS
+GEO_METHODS
+OUTPUT_SCHEMA
+```
 
 推荐：
 
-- base URL：`https://api.deepseek.com`
-- 默认模型：`deepseek-v4-flash`
-- 高复杂度或重试升级：`deepseek-v4-pro`
-- JSON Output：`response_format: {"type": "json_object"}`
+- `response_format: {"type":"json_object"}`
+- 明确 JSON 约束
+- schema 校验
+- 无效 JSON 重试
+- 降级为规则报告
 
-注意：
+不推荐：
 
-- prompt 中必须明确要求 JSON。
-- 必须提供 JSON 示例或 schema。
-- 必须设置合理 `max_tokens`，防止 JSON 截断。
-- 需要处理空内容和无效 JSON。
+- 把 raw HTML 直接给模型。
+- 用模型替代规则引擎。
+- 让模型自行搜索网页或挑选事实。
 
-## 4. 系统架构
+## 9. 可选外部工具的正确位置
 
-```text
-Web App
-  -> GEO API
-     -> URL Safety Validator
-     -> Page Fetcher
-     -> Page Parser
-     -> Page GEO Decomposer
-     -> Rule Check Engine
-     -> Retrieval Query Planner
-     -> GEO Method Retriever
-     -> Prompt Pack Builder
-     -> DeepSeek Client
-     -> JSON Validator
-     -> Report Builder
-     -> Copilot Message Handler
+### 9.1 Dify / FastGPT / RAGFlow
 
-Storage
-  -> Postgres
-  -> pgvector
-  -> snapshot files
-```
+结论：
 
-## 5. Page GEO Decomposer 设计
+- 可作为外部参考或未来外围集成对象。
+- 不作为当前核心后端。
 
-### 5.1 输入
+原因：
 
-```json
-{
-  "url": "https://example.com/page",
-  "html": "...",
-  "robots_txt": "...",
-  "llms_txt": "...",
-  "headers": {}
-}
-```
+- 它们擅长工作流、RAG 或 agent 外壳。
+- 本项目的核心价值在于 Page Evidence、RuleChecks、MethodSelector 和可追溯诊断，而不是通用聊天壳。
 
-### 5.2 输出 PageEvidencePack
+### 9.2 Jina Reader / Firecrawl / Playwright
 
-```json
-{
-  "page": {
-    "url": "",
-    "final_url": "",
-    "status_code": 200,
-    "title": "",
-    "description": "",
-    "canonical": "",
-    "html_lang": ""
-  },
-  "crawl_access": {
-    "robots_found": true,
-    "sitemap_found": true,
-    "llms_txt_found": false,
-    "ai_bots_blocked": [],
-    "server_rendered_content": true,
-    "js_dependency_risk": "low"
-  },
-  "structure": {
-    "h1": [],
-    "headings": [],
-    "content_blocks": []
-  },
-  "schema": {
-    "json_ld_count": 0,
-    "schema_types": [],
-    "entities": [],
-    "same_as_links": []
-  },
-  "geo_content": {
-    "answer_summary_present": false,
-    "claim_candidates": [],
-    "evidence_candidates": [],
-    "statistics": [],
-    "external_citations": [],
-    "faq_blocks": [],
-    "comparison_blocks": [],
-    "procedure_blocks": [],
-    "citability_candidates": []
-  },
-  "rule_checks": []
-}
-```
+结论：
 
-### 5.3 拆解算法
+- 可以作为未来 acquisition fallback。
+- 当前不写入主链路默认路径。
+
+正确顺序应当是：
 
 ```text
-fetch html
--> parse metadata
--> parse schema
--> extract visible text
--> segment by heading tree
--> classify blocks
--> extract claims / evidence / statistics
--> detect FAQ / comparison / procedure
--> audit robots / sitemap / llms.txt
--> run deterministic rule checks
--> build evidence refs
+Safe static fetch
+-> static parse
+-> 证明不足时再考虑 fallback provider
 ```
 
-## 6. GEO 方法知识库设计
+## 10. 当前不建议采用的实现
 
-### 6.1 入库来源
+- `verify=False` 作为默认 TLS 策略。
+- `follow_redirects=True` 后不再手动校验跳转目标。
+- 每次请求新建 `AsyncClient`。
+- 一开始就引入浏览器集群。
+- 一开始就引入向量数据库或复杂 RAG 平台。
+- 只用长 prompt 补偿事实抽取缺失。
 
-第一批入库内容：
+## 11. 依赖演进建议
 
-- GEO 原始论文方法。
-- citation selection / absorption 方法。
-- structural GEO 方法。
-- RAG verifiability / support 评估方法。
-- `geo-optimizer-skill` 的 robots、llms.txt、schema、citability 检查维度。
-- `geo-seo-claude` 的 citability、technical、schema、content 报告结构。
-- `geo-team-red/geo-optimizer` 的 Structure、Schema、AnswerFirst、Authority、FAQ 策略。
-- 内部输出模板和禁止措辞。
+### Phase 1 必需
 
-### 6.2 Chunk 规则
+- `fastapi`
+- `pydantic`
+- `httpx`
+- `dnspython`
+- `selectolax`
+- `trafilatura`
+- `extruct`
+- `pytest`
 
-每个 chunk 只表达一个方法点。
+### Phase 2 可增
 
-推荐 chunk 类型：
+- seed methods 相关数据文件和 selector 逻辑
 
-- `rubric`
-- `strategy`
-- `template`
-- `warning`
-- `output_rule`
-- `asset_pattern`
+### Phase 3 可增
 
-每个 chunk 必须带 metadata：
+- DeepSeek client
+- JSON validator
 
-```json
-{
-  "method_type": "strategy",
-  "page_type": "product",
-  "failure_type": "weak_evidence",
-  "asset_type": "claim_evidence_block",
-  "trust_level": "high",
-  "source_type": "paper"
-}
-```
+### Phase 4 再评估
 
-### 6.3 检索查询生成
+- `sqlalchemy`
+- `psycopg`
+- `pgvector`
+- 浏览器自动化或外部抓取 provider
 
-系统从页面诊断初步结果生成检索 query：
-
-```json
-{
-  "page_type": "product",
-  "failures": ["missing_schema", "weak_evidence", "no_faq"],
-  "needed_assets": ["json_ld", "faq", "answer_summary"],
-  "language": "zh-CN"
-}
-```
-
-### 6.4 检索输出
-
-```json
-{
-  "chunks": [
-    {
-      "method_ref": "method_chunk_001",
-      "source_title": "Structural GEO",
-      "method_type": "strategy",
-      "text": "Use answer-ready summary blocks for pages targeting recommendation queries.",
-      "why_selected": "The page lacks a concise answer-ready opening summary."
-    }
-  ]
-}
-```
-
-## 7. DeepSeek Prompt Pack
-
-### 7.1 System Prompt
+## 12. 当前技术决策摘要
 
 ```text
-You are GEO Copilot, a strict page-audit engine. Use only PAGE_EVIDENCE and GEO_METHODS. If evidence is missing, write unknown. Return valid JSON only. Every issue and action must cite evidence_ref and method_ref. Prioritize crawl access, entity clarity, schema, citability, support, and answer-ready structure. Do not invent facts or promise rankings.
+Backend: FastAPI + Pydantic
+Fetch: httpx + manual safety checks
+Parse: selectolax + trafilatura + extruct
+Storage: local analysis snapshots first
+Methods: seed cards + deterministic selector first
+LLM: DeepSeek only after evidence and rules are stable
 ```
-
-### 7.2 Task Instruction 模板
-
-```text
-Analyze the page for GEO readiness. Use PAGE_EVIDENCE as facts and GEO_METHODS as the evaluation rubric. Produce concise, prioritized feedback in the requested JSON schema. Keep recommendations actionable and grounded.
-```
-
-### 7.3 User Payload
-
-```json
-{
-  "PAGE_EVIDENCE": {},
-  "RULE_CHECKS": [],
-  "GEO_METHODS": [],
-  "OUTPUT_SCHEMA": {}
-}
-```
-
-### 7.4 输出要求
-
-- JSON only。
-- 分数 0-100。
-- issue/action 必须引用 evidence_ref + method_ref。
-- unknowns 记录证据不足。
-- 不允许保证排名。
-- 不允许新增页面事实。
-
-## 8. DeepSeekDiagnosis Schema
-
-```json
-{
-  "geo_score": 0,
-  "score_breakdown": {
-    "crawl_access": 0,
-    "entity_clarity": 0,
-    "structured_data": 0,
-    "citability": 0,
-    "evidence_support": 0,
-    "answer_readiness": 0
-  },
-  "executive_summary": "",
-  "issues": [
-    {
-      "id": "",
-      "severity": "high",
-      "category": "",
-      "finding": "",
-      "evidence_ref": "",
-      "method_ref": "",
-      "why_it_matters": ""
-    }
-  ],
-  "priority_actions": [
-    {
-      "priority": 1,
-      "action": "",
-      "expected_effect": "",
-      "effort": "low",
-      "evidence_ref": "",
-      "method_ref": ""
-    }
-  ],
-  "asset_drafts": [
-    {
-      "asset_type": "faq | json_ld | summary | llms_txt | claim_evidence_block",
-      "draft": "",
-      "needs_human_confirmation": [],
-      "evidence_ref": "",
-      "method_ref": ""
-    }
-  ],
-  "unknowns": []
-}
-```
-
-## 9. API 设计
-
-### 9.1 创建分析
-
-```http
-POST /api/analyses
-```
-
-```json
-{
-  "url": "https://example.com/product",
-  "language": "zh-CN",
-  "business_type": "b2b_saas",
-  "target_keywords": ["AI search optimization"]
-}
-```
-
-### 9.2 查询分析
-
-```http
-GET /api/analyses/{analysis_id}
-```
-
-返回：
-
-- status。
-- PageEvidencePack 摘要。
-- retrieved method refs。
-- DeepSeekDiagnosis。
-- report view model。
-
-### 9.3 Copilot 追问
-
-```http
-POST /api/analyses/{analysis_id}/messages
-```
-
-追问只允许使用：
-
-- 当前 PageEvidencePack。
-- 当前诊断。
-- 新检索或已有的 GEO_METHODS。
-
-## 10. 数据库表
-
-最小表：
-
-- `analyses`
-- `page_evidence_packs`
-- `method_documents`
-- `method_chunks`
-- `retrieval_traces`
-- `diagnoses`
-- `copilot_messages`
-
-后续可加：
-
-- `asset_exports`
-- `analysis_memory`
-- `feedback_ratings`
-
-## 11. 报告 UI
-
-报告结构：
-
-1. 总分。
-2. 分项分。
-3. 一句话结论。
-4. 最高优先级动作。
-5. 问题列表。
-6. 字段诊断。
-7. 页面证据。
-8. 方法依据。
-9. 资产草案。
-10. unknowns。
-
-UI 必须能展开：
-
-- `evidence_ref` 对应页面字段或片段。
-- `method_ref` 对应 GEO 方法 chunk。
-
-## 12. 质量控制
-
-### 12.1 JSON 校验
-
-校验：
-
-- 是否合法 JSON。
-- 是否符合 schema。
-- score 范围。
-- issue/action 是否有 evidence_ref 和 method_ref。
-- 是否出现禁止承诺。
-
-### 12.2 检索质量
-
-记录：
-
-- query。
-- 命中 chunks。
-- vector score。
-- keyword score。
-- metadata filters。
-- 最终传给 DeepSeek 的 method pack。
-
-### 12.3 反馈质量
-
-每条建议至少满足：
-
-- 有页面证据。
-- 有方法依据。
-- 可执行。
-- 不编造。
-- 不承诺确定排名。
-
-## 13. 实施里程碑
-
-### M1：Page GEO Decomposer
-
-- URL 安全抓取。
-- 页面解析。
-- 规则检查。
-- PageEvidencePack。
-
-### M2：GEO Method Knowledge Base
-
-- Postgres + pgvector。
-- 入库脚本。
-- bge-m3 embedding。
-- hybrid retrieval。
-
-### M3：DeepSeek Feedback API
-
-- Prompt Pack Builder。
-- DeepSeek JSON Output。
-- JSON Validator。
-- Report Builder。
-
-### M4：Copilot 追问
-
-- 基于 analysis 的追问。
-- 资产生成。
-- evidence_ref / method_ref 展开。
-
-## 14. 当前决策摘要
-
-```text
-Frontend: Next.js + TypeScript
-Backend: FastAPI + Python
-Main DB: Postgres
-Vector: pgvector
-Embedding: BGE-M3
-Generator: DeepSeek API
-Prompt: short system prompt + retrieved methods + page evidence + JSON schema
-Scope: single URL first
-```
-
-## 15. 外部依据
-
-- [DeepSeek API Docs](https://api-docs.deepseek.com/)：OpenAI/Anthropic 兼容格式，支持 JSON Output。
-- [pgvector](https://github.com/pgvector/pgvector)：Postgres 向量相似度搜索。
-- [Qdrant Documentation](https://qdrant.tech/documentation/)：后续可选独立向量数据库。
-- [BAAI/bge-m3](https://huggingface.co/BAAI/bge-m3)：多语言、多粒度 embedding 候选。
