@@ -79,6 +79,12 @@
 - links、images、tables、局部 DOM 块提取。
 - 建立稳定的块级 `evidence_ref`。
 
+当前接入策略：
+
+- 先只替换 `parser.py` 的 DOM 提取层，保持 `PageEvidencePack` 外部结构稳定。
+- 先不把 clean markdown 和 broader structured data extraction 一起并入 `selectolax` phase。
+- 优先验证 metadata、heading、anchor text、table text、content blocks 和 `evidence_ref` 稳定性。
+
 ### 4.2 `trafilatura`
 
 适合：
@@ -86,6 +92,11 @@
 - 去除导航、页脚、广告噪声。
 - 输出 clean text / markdown。
 - 为 RuleChecks 和后续模型上下文提供高密度文本。
+
+当前接入策略：
+
+- 先只替换 `clean.md` 和 parser 返回的 `clean_markdown` 来源。
+- 不让 `trafilatura` 直接决定 metadata、headings 或 evidence refs。
 
 ### 4.3 `extruct`
 
@@ -97,6 +108,12 @@
 - Open Graph 等结构化信息
 
 这比只手工扫 `script[type=\"application/ld+json\"]` 更完整。
+
+当前接入策略：
+
+- `structured_data.py` 统一调用 `extruct.extract(...)`。
+- 先把 `json_ld`、`opengraph`、`microdata`、`microformat`、`rdfa`、`dublincore` 映射到结构化 evidence。
+- 暂不把 `extruct` 输出直接并回 `metadata`，避免来源边界不清。
 
 ## 5. Page Evidence 输出建议
 

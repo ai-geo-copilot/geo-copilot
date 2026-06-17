@@ -73,9 +73,14 @@
     },
     "structured_data": {
       "type": "object",
-      "required": ["json_ld"],
+      "required": ["json_ld", "microdata", "opengraph", "microformat", "rdfa", "dublincore"],
       "properties": {
-        "json_ld": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } }
+        "json_ld": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } },
+        "microdata": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } },
+        "opengraph": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } },
+        "microformat": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } },
+        "rdfa": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } },
+        "dublincore": { "type": "array", "items": { "$ref": "#/$defs/structuredDataItem" } }
       }
     },
     "content_blocks": {
@@ -174,7 +179,9 @@
       "type": "object",
       "required": ["kind", "data", "evidence_ref"],
       "properties": {
-        "kind": { "const": "json-ld" },
+        "kind": {
+          "enum": ["json-ld", "microdata", "opengraph", "microformat", "rdfa", "dublincore"]
+        },
         "data": {},
         "evidence_ref": { "type": "string" }
       }

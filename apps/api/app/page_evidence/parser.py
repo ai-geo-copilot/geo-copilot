@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from html.parser import HTMLParser
+import re
 from urllib.parse import urljoin
+
+from selectolax.lexbor import LexborHTMLParser
+import trafilatura
 
 from .content_blocks import build_clean_markdown
 from .models import (
@@ -14,159 +17,24 @@ from .models import (
     StructureEvidence,
     TableEvidence,
 )
-from .structured_data import parse_json_ld
+from .structured_data import parse_structured_data
+
+_CONTENT_BLOCK_SELECTOR = "p, li, blockquote"
+_HEADING_SELECTOR = "h1, h2, h3, h4, h5, h6"
 
 
-class _EvidenceHtmlParser(HTMLParser):
-    def __init__(self, base_url: str) -> None:
-        super().__init__(convert_charrefs=True)
-        self.base_url = base_url
-        self.lang: str | None = None
-        self.title_parts: list[str] = []
-        self.title = ""
-        self.description: str | None = None
-        self.canonical: str | None = None
-        self.headings: list[HeadingEvidence] = []
-        self.links: list[LinkEvidence] = []
-        self.images: list[ImageEvidence] = []
-        self.tables: list[str] = []
-        self.content_blocks: list[ContentBlock] = []
-        self.json_ld_scripts: list[str] = []
+def _normalize_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = re.sub(r"\s+", " ", value).strip()
+    return normalized or None
 
-        self._current_title = False
-        self._current_heading_level: int | None = None
-        self._current_heading_text: list[str] = []
-        self._current_block_tag: str | None = None
-        self._current_block_text: list[str] = []
-        self._current_table = False
-        self._current_table_text: list[str] = []
-        self._current_script_json_ld = False
-        self._current_script_text: list[str] = []
-        self._heading_index = 0
-        self._link_index = 0
-        self._image_index = 0
-        self._table_index = 0
-        self._block_index = 0
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attr_map = dict(attrs)
-        if tag == "html":
-            self.lang = (attr_map.get("lang") or self.lang or "").strip() or None
-        elif tag == "title":
-            self._current_title = True
-        elif tag == "meta":
-            name = (attr_map.get("name") or attr_map.get("property") or "").lower()
-            if name in {"description", "og:description"} and not self.description:
-                self.description = (attr_map.get("content") or "").strip() or None
-        elif tag == "link":
-            rel = (attr_map.get("rel") or "").lower().split()
-            href = attr_map.get("href")
-            if href:
-                if "canonical" in rel and not self.canonical:
-                    self.canonical = urljoin(self.base_url, href)
-                self.links.append(
-                    LinkEvidence(
-                        href=urljoin(self.base_url, href),
-                        text=None,
-                        rel=rel,
-                        evidence_ref=f"structure.links[{self._link_index}]",
-                    )
-                )
-                self._link_index += 1
-        elif tag == "a":
-            href = attr_map.get("href")
-            if href:
-                self.links.append(
-                    LinkEvidence(
-                        href=urljoin(self.base_url, href),
-                        text=None,
-                        rel=[],
-                        evidence_ref=f"structure.links[{self._link_index}]",
-                    )
-                )
-                self._link_index += 1
-        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6"}:
-            self._current_heading_level = int(tag[1])
-            self._current_heading_text = []
-        elif tag == "img":
-            src = attr_map.get("src")
-            if src:
-                self.images.append(
-                    ImageEvidence(
-                        src=urljoin(self.base_url, src),
-                        alt=(attr_map.get("alt") or "").strip() or None,
-                        evidence_ref=f"structure.images[{self._image_index}]",
-                    )
-                )
-                self._image_index += 1
-        elif tag == "table":
-            self._current_table = True
-            self._current_table_text = []
-        elif tag in {"p", "li", "blockquote"}:
-            self._current_block_tag = tag
-            self._current_block_text = []
-        elif tag == "script" and (attr_map.get("type") or "").lower() == "application/ld+json":
-            self._current_script_json_ld = True
-            self._current_script_text = []
-
-    def handle_data(self, data: str) -> None:
-        text = data.strip()
-        if not text:
-            return
-        if self._current_title:
-            self.title_parts.append(text)
-        if self._current_heading_level is not None:
-            self._current_heading_text.append(text)
-        if self._current_block_tag is not None:
-            self._current_block_text.append(text)
-        if self._current_table:
-            self._current_table_text.append(text)
-        if self._current_script_json_ld:
-            self._current_script_text.append(data)
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag == "title":
-            self._current_title = False
-            self.title = " ".join(self.title_parts).strip()
-        elif tag in {"h1", "h2", "h3", "h4", "h5", "h6"} and self._current_heading_level is not None:
-            text = " ".join(self._current_heading_text).strip()
-            if text:
-                self.headings.append(
-                    HeadingEvidence(
-                        level=self._current_heading_level,
-                        text=text,
-                        evidence_ref=f"structure.headings[{self._heading_index}]",
-                    )
-                )
-                self._heading_index += 1
-            self._current_heading_level = None
-            self._current_heading_text = []
-        elif tag == "table" and self._current_table:
-            text = " ".join(self._current_table_text).strip()
-            if text:
-                self.tables.append(text)
-                self._table_index += 1
-            self._current_table = False
-            self._current_table_text = []
-        elif tag == self._current_block_tag and self._current_block_tag is not None:
-            text = " ".join(self._current_block_text).strip()
-            if text:
-                self.content_blocks.append(
-                    ContentBlock(
-                        evidence_ref=f"content_blocks[{self._block_index}]",
-                        text=text,
-                        source_tag=self._current_block_tag,
-                    )
-                )
-                self._block_index += 1
-            self._current_block_tag = None
-            self._current_block_text = []
-        elif tag == "script" and self._current_script_json_ld:
-            content = "".join(self._current_script_text).strip()
-            if content:
-                self.json_ld_scripts.append(content)
-            self._current_script_json_ld = False
-            self._current_script_text = []
+def _first_attr(tree: LexborHTMLParser, selector: str, attribute: str) -> str | None:
+    node = tree.css_first(selector)
+    if node is None:
+        return None
+    return _normalize_text(node.attributes.get(attribute))
 
 
 class ParsedPage:
@@ -187,28 +55,121 @@ class ParsedPage:
 
 
 def parse_html(html: str, base_url: str) -> ParsedPage:
-    parser = _EvidenceHtmlParser(base_url)
-    parser.feed(html)
+    tree = LexborHTMLParser(html)
+
+    title_node = tree.css_first("title")
+    title = _normalize_text(title_node.text()) if title_node is not None else None
+    description = (
+        _first_attr(tree, 'meta[name="description"]', "content")
+        or _first_attr(tree, 'meta[property="og:description"]', "content")
+    )
+    canonical_href = _first_attr(tree, 'link[rel="canonical"]', "href")
+    canonical = urljoin(base_url, canonical_href) if canonical_href else None
+    html_node = tree.css_first("html")
+    lang = _normalize_text(html_node.attributes.get("lang")) if html_node is not None else None
+
+    headings: list[HeadingEvidence] = []
+    for index, node in enumerate(tree.css(_HEADING_SELECTOR)):
+        text = _normalize_text(node.text(separator=" ", strip=True))
+        if not text:
+            continue
+        headings.append(
+            HeadingEvidence(
+                level=int(node.tag[1]),
+                text=text,
+                evidence_ref=f"structure.headings[{len(headings)}]",
+            )
+        )
+
+    links: list[LinkEvidence] = []
+    for node in tree.css("link[href]"):
+        href = node.attributes.get("href")
+        if not href:
+            continue
+        rel = _normalize_text(node.attributes.get("rel"))
+        links.append(
+            LinkEvidence(
+                href=urljoin(base_url, href),
+                text=None,
+                rel=rel.split() if rel else [],
+                evidence_ref=f"structure.links[{len(links)}]",
+            )
+        )
+    for node in tree.css("a[href]"):
+        href = node.attributes.get("href")
+        if not href:
+            continue
+        links.append(
+            LinkEvidence(
+                href=urljoin(base_url, href),
+                text=_normalize_text(node.text(separator=" ", strip=True)),
+                rel=[],
+                evidence_ref=f"structure.links[{len(links)}]",
+            )
+        )
+
+    images: list[ImageEvidence] = []
+    for node in tree.css("img[src]"):
+        src = node.attributes.get("src")
+        if not src:
+            continue
+        images.append(
+            ImageEvidence(
+                src=urljoin(base_url, src),
+                alt=_normalize_text(node.attributes.get("alt")),
+                evidence_ref=f"structure.images[{len(images)}]",
+            )
+        )
+
+    tables: list[TableEvidence] = []
+    for node in tree.css("table"):
+        text = _normalize_text(node.text(separator=" ", strip=True))
+        if not text:
+            continue
+        tables.append(TableEvidence(text=text, evidence_ref=f"structure.tables[{len(tables)}]"))
+
+    content_blocks: list[ContentBlock] = []
+    for node in tree.css(_CONTENT_BLOCK_SELECTOR):
+        text = _normalize_text(node.text(separator=" ", strip=True))
+        if not text:
+            continue
+        content_blocks.append(
+            ContentBlock(
+                evidence_ref=f"content_blocks[{len(content_blocks)}]",
+                text=text,
+                source_tag=node.tag,
+            )
+        )
+
+    clean_markdown = trafilatura.extract(
+        html,
+        url=base_url,
+        output_format="markdown",
+        include_tables=True,
+        include_formatting=True,
+        include_links=False,
+        include_images=False,
+        target_language=lang,
+    )
+    if clean_markdown is None:
+        clean_markdown = build_clean_markdown(content_blocks)
+
     metadata = MetadataEvidence(
-        title=EvidenceValue(value=parser.title or None, evidence_ref="metadata.title"),
-        description=EvidenceValue(value=parser.description, evidence_ref="metadata.description"),
-        canonical=EvidenceValue(value=parser.canonical, evidence_ref="metadata.canonical"),
-        lang=EvidenceValue(value=parser.lang, evidence_ref="metadata.lang"),
+        title=EvidenceValue(value=title, evidence_ref="metadata.title"),
+        description=EvidenceValue(value=description, evidence_ref="metadata.description"),
+        canonical=EvidenceValue(value=canonical, evidence_ref="metadata.canonical"),
+        lang=EvidenceValue(value=lang, evidence_ref="metadata.lang"),
     )
     structure = StructureEvidence(
-        headings=parser.headings,
-        links=parser.links,
-        images=parser.images,
-        tables=[
-            TableEvidence(text=text, evidence_ref=f"structure.tables[{index}]")
-            for index, text in enumerate(parser.tables)
-        ],
+        headings=headings,
+        links=links,
+        images=images,
+        tables=tables,
     )
-    content_blocks = parser.content_blocks
     return ParsedPage(
         metadata=metadata,
-        structure=StructureEvidence.model_validate(structure),
+        structure=structure,
         content_blocks=content_blocks,
-        clean_markdown=build_clean_markdown(content_blocks),
-        structured_data=parse_json_ld(parser.json_ld_scripts),
+        clean_markdown=clean_markdown.strip(),
+        structured_data=parse_structured_data(html, base_url),
     )

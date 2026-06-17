@@ -7,7 +7,7 @@ from urllib.parse import urljoin
 
 import httpx
 
-from .errors import FetchError, NonHtmlResponseError
+from .errors import FetchError, NonHtmlResponseError, PageEvidenceError
 from .models import FetchInfo, FetchedResource, RedirectHop
 from .url_safety import Resolver, validate_public_url
 
@@ -28,7 +28,7 @@ class PageFetcher:
         max_bytes: int = 1_000_000,
         resolver: Resolver | None = None,
     ) -> None:
-        self._client = client or httpx.Client(timeout=timeout_seconds)
+        self._client = client or httpx.Client(timeout=timeout_seconds, trust_env=False)
         self._owns_client = client is None
         self._timeout_seconds = timeout_seconds
         self._max_redirects = max_redirects
@@ -112,7 +112,7 @@ class PageFetcher:
                 error_code="request_failed",
                 evidence_ref=evidence_ref,
             )
-        except (httpx.HTTPError, FetchError):
+        except (PageEvidenceError, httpx.HTTPError):
             return FetchedResource(
                 url=resource_url,
                 reachable=False,

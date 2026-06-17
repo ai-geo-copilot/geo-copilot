@@ -18,7 +18,7 @@
 
 ## 2. 当前总体阶段
 
-当前阶段：Sprint 0 scaffold 已完成；2026-06-17 已完成正式文档基线重构；同日已落地 Page Evidence v1 最小闭环骨架，下一步进入能力补全与覆盖率加固。
+当前阶段：Sprint 0 scaffold 已完成；2026-06-17 已完成正式文档基线重构、Page Evidence v1 最小闭环与 P0 hardening；已进入正式解析栈升级与 fixture 固化阶段，当前正在推进 `selectolax + extruct + trafilatura` 解析栈落地。
 
 当前优先级：
 
@@ -36,7 +36,7 @@
 原因：
 
 - DeepSeek、复杂检索和报告 UI 都依赖高质量页面证据包。
-- 当前代码仍停留在分析接口和证据契约的占位阶段。
+- 当前主链路虽已打通，但正式解析栈与 fixture 覆盖仍未完成。
 - 本轮文档决策已确认 MVP 先走 evidence-first 路线，而不是重 RAG 路线。
 
 ## 3. 已完成
@@ -117,9 +117,12 @@
 
 当前边界：
 
-- 当前 HTML 解析基于标准库 `html.parser`，未接 `selectolax` / `trafilatura` / `extruct`
+- 当前 DOM 解析已切换为 `selectolax`
+- 当前 structured data extraction 已接入 `extruct`
+- 当前 clean markdown extraction 已接入 `trafilatura`
 - 当前规则集为基础版本，不代表 Page Evidence v1 全量验收已完成
 - 当前 `POST /api/analyses` 采用同步分析返回结果
+
 ### 3.6 Database scaffold
 
 已创建初始 migration：
@@ -167,7 +170,6 @@
 
 当前状态：
 
-- GitHub CLI 当前认证已失效，重新登录时曾出现 GitHub API `EOF`
 - `https://github.com/ai-geo-copilot` 已确认为 GitHub organization，不是仓库地址
 - organization 下原先无仓库
 - 已创建远端仓库 `https://github.com/ai-geo-copilot/geo-copilot`
@@ -175,7 +177,7 @@
 - remote `origin` 指向 `https://github.com/ai-geo-copilot/geo-copilot.git`
 - 初始 scaffold 已推送到 `origin/main`
 - 本地已创建提交 `6779146 Implement page evidence v1 scaffold`
-- 当前环境尚未把该提交成功推送到远端，原因是 GitHub TLS / auth 问题
+- `09d01fc Harden page evidence foundation` 已成功推送到 `origin/main`
 - 已从 git 中移除 TypeScript 生成文件 `apps/web/tsconfig.tsbuildinfo`
 - `.gitignore` 已补充 `*.tsbuildinfo`
 
@@ -243,6 +245,63 @@
 - 已验证中文页面会生成 `cjk_char_count` 与 `substance_score`
 - 已移除 `PageEvidenceService.analyze()` 的重复 snapshot 双写
 - API service 生命周期已切到 FastAPI lifespan 管理
+
+### 4.5 Contract / lifespan cleanup 验证（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- 契约测试已改为 `with TestClient(app)` 上下文管理
+- dependency override 已在测试结束后清理，避免跨测试污染
+- 已新增 FastAPI lifespan smoke test，验证 `page_evidence_service` 会注册到 `app.state`
+- `fetch_auxiliary` 现会捕获 `PageEvidenceError`，辅助文件失败不再中断主流程
+- 默认 `httpx.Client` 已设置 `trust_env=False`，避免本机代理环境污染生命周期与默认 service 初始化
+
+### 4.6 Contract / auxiliary cleanup re-verify（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- `pytest`：12 passed
+- lifespan smoke test、override cleanup 和 auxiliary 容错路径均已通过
+
+### 4.7 Selectolax parser 验证（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- `parser.py` 已从标准库 `html.parser` 切换为 `selectolax.lexbor.LexborHTMLParser`
+- `apps/api/requirements.txt` 已加入 `selectolax==0.4.10`
+- 已验证 metadata、canonical、heading、anchor text、image alt、table text、content blocks 和 JSON-LD script 收集
+- 已新增 fixture `apps/api/tests/fixtures/html/selectolax_article.html`
+- `pytest`：14 passed
+
+### 4.8 Extruct / Trafilatura parser 验证（2026-06-17）
+
+执行命令：
+
+- `python -m pytest apps/api/tests`
+- `python -m compileall apps/api/app apps/api/tests`
+
+验证结果：
+
+- `structured_data.py` 已改为通过 `extruct.extract(...)` 构建 structured data evidence
+- `parser.py` 已改为通过 `trafilatura.extract(..., output_format="markdown")` 生成 `clean_markdown`
+- 已验证 `json_ld`、`opengraph`、`dublincore` 的映射与 `clean_markdown` 输出
+- `pytest`：14 passed
+- 当前测试存在上游依赖 warning：`mf2py` 与 `pyRdfa` 在 Python 3.14 下会发出 `DeprecationWarning`
 
 ## 5. 当前关键决策
 
@@ -351,10 +410,9 @@ DeepSeek 暂不作为事实来源。
 
 下一步仍需补强：
 
-- 用正式实现替换当前标准库解析器，验证 `selectolax` / `trafilatura` / `extruct`
-- 补更多 HTML fixture，覆盖非 HTML、重定向、薄内容、多 H1、缺 metadata 等场景
+- 补更多 HTML fixture，覆盖 microdata、rdfa、opengraph-only、薄内容、多 H1、缺 metadata 等场景
 - 继续细化 `evidence_ref` 稳定性和规则集口径
-- 视解析栈升级结果再冻结辅助文件状态与 structured data 粒度
+- 视样本验证结果再冻结 structured data 粒度与 report 口径
 
 ### 6.2 API integration
 

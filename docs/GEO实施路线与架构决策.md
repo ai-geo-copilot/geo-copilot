@@ -89,6 +89,14 @@ URL safety 自研
 - HTML 主体提取、DOM 遍历、结构化数据提取不必重复造轮子。
 - 这样能把复杂度放在真正的产品边界，而不是重复实现通用解析算法。
 
+当前阶段补充：
+
+- `selectolax` 先作为 DOM 提取正式实现接入，替换临时标准库 parser。
+- `parser.py` 继续只承担 DOM 字段、links、images、tables、基础内容块和 JSON-LD script 收集。
+- `extruct` 负责 embedded structured data extraction。
+- `trafilatura` 负责 clean markdown / main content extraction。
+- 解析栈按 `selectolax -> extruct -> trafilatura` 的顺序增量接入，service 与 schema 尽量保持稳定。
+
 ### 4.3 Page Evidence v1 默认静态 HTML，不默认浏览器
 
 当前不把 Playwright 或外部抓取服务设为默认路径。
@@ -218,6 +226,12 @@ page_evidence/
 - `PageEvidencePack` 构建。
 - `RuleChecks` 生成。
 - 快照落盘。
+
+当前内部设计约束：
+
+- `parser.py` 是 DOM extraction module，不负责 HTTP、规则判断或快照写入。
+- `service.py` 继续作为编排层，不感知 `selectolax` 具体选择器细节。
+- `structured_data.py` 统一承接 `extruct` 输出，并向 `PageEvidencePack` 映射稳定 evidence refs。
 
 ### 5.2 `apps/api/app/methods`
 

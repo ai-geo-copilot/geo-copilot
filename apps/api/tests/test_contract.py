@@ -1,3 +1,6 @@
+from collections.abc import Iterator
+
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import app
@@ -16,9 +19,6 @@ from apps.api.app.page_evidence.models import (
     StructuredDataEvidence,
 )
 from apps.api.app.routers.analyses import get_analysis_service
-
-
-client = TestClient(app)
 
 
 class _StubService:
@@ -52,7 +52,14 @@ class _StubService:
                     llms_full_txt=FetchedResource(url=f"{url}/llms-full.txt", status_code=404, reachable=False, status="missing", error_code="not_found", evidence_ref="crawl_access.llms_full_txt"),
                 ),
                 structure=StructureEvidence(),
-                structured_data=StructuredDataEvidence(),
+                structured_data=StructuredDataEvidence(
+                    json_ld=[],
+                    microdata=[],
+                    opengraph=[],
+                    microformat=[],
+                    rdfa=[],
+                    dublincore=[],
+                ),
                 content_blocks=[],
                 rule_check_inputs=RuleCheckInputs(
                     word_count=0,
@@ -83,17 +90,29 @@ class _StubService:
         return self.analyze_safe("https://example.com/", "zh-CN")
 
 
-app.dependency_overrides[get_analysis_service] = _StubService
+@pytest.fixture
+def client() -> Iterator[TestClient]:
+    app.dependency_overrides[get_analysis_service] = lambda request=None: _StubService()
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
 
 
-def test_health_check() -> None:
+def test_lifespan_registers_page_evidence_service() -> None:
+    with TestClient(app) as client:
+        assert hasattr(client.app.state, "page_evidence_service")
+
+
+def test_health_check(client: TestClient) -> None:
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
 
 
-def test_create_analysis_returns_completed_contract() -> None:
+def test_create_analysis_returns_completed_contract(client: TestClient) -> None:
     response = client.post(
         "/api/analyses",
         json={"url": "https://example.com", "language": "zh-CN"},

@@ -60,7 +60,7 @@ class TableEvidence(BaseModel):
 
 
 class StructuredDataItem(BaseModel):
-    kind: Literal["json-ld"]
+    kind: Literal["json-ld", "microdata", "opengraph", "microformat", "rdfa", "dublincore"]
     data: dict[str, Any] | list[Any]
     evidence_ref: str
 
@@ -94,6 +94,11 @@ class StructureEvidence(BaseModel):
 
 class StructuredDataEvidence(BaseModel):
     json_ld: list[StructuredDataItem] = Field(default_factory=list)
+    microdata: list[StructuredDataItem] = Field(default_factory=list)
+    opengraph: list[StructuredDataItem] = Field(default_factory=list)
+    microformat: list[StructuredDataItem] = Field(default_factory=list)
+    rdfa: list[StructuredDataItem] = Field(default_factory=list)
+    dublincore: list[StructuredDataItem] = Field(default_factory=list)
 
 
 class RuleCheckInputs(BaseModel):

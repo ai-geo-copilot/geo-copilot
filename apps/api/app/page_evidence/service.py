@@ -22,7 +22,7 @@ class PageEvidenceService:
         storage: SnapshotStorage | None = None,
         resolver: Resolver | None = None,
     ) -> None:
-        self._client = httpx.Client(timeout=10.0) if fetcher is None else None
+        self._client = httpx.Client(timeout=10.0, trust_env=False) if fetcher is None else None
         self._fetcher = fetcher or PageFetcher(client=self._client, resolver=resolver)
         self._storage = storage or SnapshotStorage()
         self._resolver = resolver
