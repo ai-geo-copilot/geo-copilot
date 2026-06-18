@@ -40,6 +40,7 @@ HTTP 模块完成后，后续模块只能消费这些结构化对象，不能再
 - 当前代码中的 `geo_signals.py` 已经承担 `PageContentProfile` 所需的大部分输入信号。
 - 因此当前阶段不应把 `PageContentProfile` 当成独立大模块并行重做。
 - `RuleChecks` 当前也不是从零设计，而是基于 `PageEvidencePack + geo_signals` 做 fixture-driven freeze。
+- 当前 `PageContentProfile` 应作为 HTTP 模块的正式内部产物、独立 schema 产物和 snapshot 产物维护，但不要求立刻成为公开 API 字段。
 
 ## 2. 依据来源
 
@@ -75,6 +76,7 @@ HTTP 层完成不等于“可以调用 DeepSeek”。完成标准如下：
 4. RuleChecks 能覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类问题。
 5. fixtures 覆盖文章页、产品页、文档页、比较页、中文页、microdata、RDFa、OpenGraph-only、薄内容、多 H1、schema mismatch、prompt injection。
 6. 快照稳定写入 `raw.html`、`clean.md`、`evidence.json`、`rule_checks.json`、`analysis.json`。
+6. 快照稳定写入 `raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`analysis.json`。
 7. 测试通过：
 
 ```text
@@ -262,6 +264,13 @@ PageEvidencePack
 -> PageContentProfile builder
 -> 只读 GEO 抽象对象
 ```
+
+当前实现要求：
+
+- `PageEvidenceService` 只构建一次 `PageContentProfile`
+- `RuleChecks` 消费由 service 传入的同一份 profile
+- `SnapshotStorage` 独立保存 `page_content_profile.json`
+- 独立维护 `page-content-profile.schema.json`
 
 ### 4.8 `rule_checks.py`
 
@@ -595,6 +604,7 @@ P0 完成后再做 P1：
 - one positive rule
 - one negative or warning rule
 - snapshot roundtrip 不丢字段
+- readiness rule 的 `evidence_refs` 可解析到 `PageEvidencePack` 或 `PageContentProfile`
 
 当前缺口优先级：
 

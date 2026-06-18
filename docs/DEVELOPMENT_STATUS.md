@@ -1,7 +1,7 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-17  
+最后更新：2026-06-18  
 唯一开发状态源：是
 
 ## 1. 使用规则
@@ -20,15 +20,15 @@
 
 当前阶段：
 
-> Page Evidence v1 开发中。
-> 当前主链路已扩展到 `PageEvidencePack + extraction + geo_signals + RuleChecks v1 P0`。
-> 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy` 三类 fixture 覆盖，下一阶段是继续冻结字段口径与 evidence_ref 稳定性。
+> HTTP / Page Evidence v1 已完成最终冻结验收。
+> 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + snapshot + API base report + minimal public PageContentProfile subset`。
+> 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy`、`cjk-product`、`cjk-docs`、`cjk-comparison` 六类 synthetic fixture 覆盖，并新增 Shopify / Ahrefs / Moz 的真实 HTML excerpt fixture；当前公开 API 已冻结 `page_content_profile` 最小稳定子集，完整 `PageContentProfile` 继续保留在 service 内部结果、snapshot 和 `analysis.json` 中。本轮已完成一次抓取层性能优化，HTTP 层后续只接受不破坏 contract 的回归修复和实现增强。
 
 ## 3. 当前优先级
 
-1. 继续完整开发 `apps/api/app/page_evidence`
-2. 冻结 `PageEvidencePack v1`
-3. 冻结 `RuleChecks v1` 和基础报告口径
+1. 基于已冻结 HTTP 输出推进 `MethodSelector v0`
+2. 继续保持 `apps/api/app/page_evidence` 的冻结状态，仅接受回归修复和兼容性维护
+3. 如需接入其他抓取 provider 或继续做性能增强，必须保持已冻结公开 contract 不变
 
 明确不优先：
 
@@ -77,9 +77,23 @@
 - Extraction：已输出 `parser`、`structured_data_parser`、`main_content_extractor`、`clean_markdown_sha256` 和 `warnings`
 - GEO-ready signals：已输出 `page_type_hint`、`primary_entity_candidates`、`content_outline`、`answer_unit_candidates`、`claim_candidates`、`evidence_candidates`、`statistics`、`structured_data_profile`、`boilerplate_metrics`、`safety_flags`
 - PageContentProfile v1 minimal read model：已可从 `PageEvidencePack` 构建 `page_type`、entity/outline/answer units、claim/evidence/statistics、schema/boilerplate、安全风险、`selection_readiness`、`absorption_readiness`、`content_gaps`
-- RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`；当前已开始直接消费 `PageContentProfile` 的 readiness 信号
-- Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`rule_checks.json`、`analysis.json`
+- RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`；当前直接消费由 service 构建的 `PageContentProfile` readiness 信号
+- Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`analysis.json`
 - Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试，并已覆盖 `rdfa`、`opengraph-only`、`navigation-heavy` 场景，以及 snapshot 落盘 / round-trip 回归
+- 新增中文产品页 fixture：`apps/api/tests/fixtures/html/cjk_product_page.html`，并已把 parser、geo_signals、rule_checks、service 的中文页行为固定为正式回归样本
+- 新增中文文档页与中文比较页 fixture：`apps/api/tests/fixtures/html/cjk_docs_howto_page.html`、`apps/api/tests/fixtures/html/cjk_comparison_page.html`，并已把 docs / comparison 场景的 parser、geo_signals、page_content_profile、rule_checks、service 行为固定为正式回归样本
+- 新增真实品牌站 excerpt fixture：`apps/api/tests/fixtures/html/real_shopify_plus_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_keyword_research_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_seo_vs_sem_excerpt.html`、`apps/api/tests/fixtures/html/real_moz_beginners_guide_excerpt.html`，来源清单记录于 `apps/api/tests/fixtures/html/REAL_FIXTURE_SOURCES.md`
+- `real_moz_beginners_guide_excerpt.html` 当前稳定复现了真实站点 excerpt 下的 `H1` 缺失结构问题，可用于冻结 `structure.h1_missing_or_multiple` 的真实样本行为
+- `geo_signals.statistics` 已支持对相邻内容块中的来源提示做确定性关联，数值 claim 不再只依赖“同段来源”识别
+- `geo_signals` 的 claim heuristic 已补充中文“领先”识别，中文比较页中的 unsupported claim 可被稳定纳入 `content_gaps` 与 `RuleChecks`
+- `POST /api/analyses` 与 `GET /api/analyses/{analysis_id}` 的公开响应当前已冻结为 `page_evidence + page_content_profile(minimal public subset) + rule_checks + snapshot_dir`
+- 公开 `page_content_profile` 当前只暴露稳定摘要字段：`profile_version`、`page_type`、`page_type_evidence_refs`、`primary_entity`、`selection_readiness`、`absorption_readiness`、`prompt_injection_risk`、`structured_data`
+- 完整 `PageContentProfile` 继续只保留在 service 内部结果、snapshot 和 `analysis.json` 中，不作为公开 API 的全量 profile 返回
+- `PageEvidencePack` 与 `PageContentProfile` 的 contract schema 已分别有模型对齐测试，字段冻结将直接受测试保护
+- `structured_data_profile.visible_alignment` 已修正 RDFa / OpenGraph / 产品页的 false positive，当前会优先识别真实的名称对齐、价格/评分可见线索和否定线索
+- `RuleChecks v1` 已新增 P0 冻结矩阵测试，当前 18 条基础规则都至少有一个 pass 样本和一个 warning/failed 样本
+- 当前 HTTP 模块完成口径已由代码和测试验证：`PageEvidencePack v1`、`PageContentProfile` 最小稳定公开子集、`RuleChecks v1`、fixtures、snapshots 与 API base report 已全部收口
+- 抓取层已完成一次性能增强：`PageFetcher` 当前已使用 `httpx` 连接池 limits、URL public validation 缓存、基于 `Content-Length` 的超大响应头预拒绝、以及 4 个辅助抓取资源的并发 bundle 获取；`PageEvidenceService` 已改为复用 fetcher 的验证缓存和并发辅助抓取结果
 
 ### 4.4 当前契约状态
 
@@ -98,6 +112,17 @@
 - `geo_signals`
 - `storage`
 
+当前公开 API `page_content_profile` 最小稳定子集已冻结为：
+
+- `profile_version`
+- `page_type`
+- `page_type_evidence_refs`
+- `primary_entity`
+- `selection_readiness`
+- `absorption_readiness`
+- `prompt_injection_risk`
+- `structured_data`
+
 ### 4.5 文档方法论基线
 
 已完成文档同步：
@@ -114,27 +139,27 @@
 当前文档口径：
 
 - `PageContentProfile` 是目标 GEO 抽象层。
-- 当前已实现最小 `PageContentProfile` read model，但仍不把它作为额外 extraction 链路或独立大模块并行扩张。
+- 当前已实现最小 `PageContentProfile` read model，并已把它提升为正式内部产物、独立 schema 产物和 snapshot 产物，但仍不把它作为额外 extraction 链路或独立大模块并行扩张。
+- 当前已确认公开 API 只返回 `PageContentProfile` 的最小稳定子集，不公开完整内部 profile。
 - 当前不因文档方法论补强而改变“先冻结 PageEvidencePack v1 和 RuleChecks v1”的开发优先级。
 - `docs/模块开发补充/HTTP层GEO开发流程与完成标准.md` 已更新为当前执行顺序：先冻结 `PageEvidencePack / evidence_ref / fixtures`，再最小实现 `PageContentProfile` read model，最后冻结 `RuleChecks v1`。
-- HTTP 模块完成口径是 `PageEvidencePack v1 + GEO-ready signals + RuleChecks v1 + fixtures + snapshots`，不是接入 DeepSeek 或 MethodSelector。
+- HTTP 模块完成口径是 `PageEvidencePack v1 + GEO-ready signals + minimal public PageContentProfile subset + RuleChecks v1 + fixtures + snapshots`，不是接入 DeepSeek。
 
 ## 5. 当前边界
 
 当前仍未完成：
 
-- `PageEvidencePack v1` 字段口径最终冻结
-- `RuleChecks v1` 规则口径最终冻结
-- `PageContentProfile v1` 与后续消费层的正式接线 / 契约暴露
-- 更多真实样本下的 fixture / snapshot 固化与 `evidence_ref` 稳定性确认
+- `PageContentProfile v1` 完整对象的全量对外字段口径最终冻结
 - 方法选择层
 - DeepSeek diagnosis 层
 
 当前实现边界：
 
 - 当前 `POST /api/analyses` 仍采用同步分析返回
-- 当前规则集仍是基础版，不代表 Page Evidence v1 已验收完成
+- 当前规则集与 `page_content_profile` 最小公开子集都已冻结为 HTTP 模块验收基线
+- 后续可在不打破 `PageEvidencePack v1 + minimal public PageContentProfile subset + RuleChecks v1` contract 的前提下替换抓取实现、增加 provider 或继续做性能增强
 - 当前 structured data 粒度和部分 heuristic 阈值仍可能在样本验证后调整
+- 当前仍以静态 HTML 抓取为主，不默认启用浏览器渲染或外部抓取 provider
 
 ## 6. 已验证结果
 
@@ -145,7 +170,9 @@
 
 最新验证结果：
 
-- `pytest`：29 passed
+- `pytest`：45 passed
+- `pytest`：47 passed
+- `pytest`：48 passed
 - `compileall`：通过
 
 当前测试已覆盖：
@@ -158,11 +185,22 @@
 - `extruct` structured data mapping
 - `trafilatura` markdown extraction
 - article JSON-LD / product microdata / schema mismatch / prompt injection hidden comment
+- 中文产品页 fixture：`Product` JSON-LD、CJK substance、相邻来源提示到数值 claim 的关联、产品页 schema 对齐
+- 中文文档页 fixture：docs page type、definition/procedure/statistic answer units、无 structured data 的 docs 规则表现
+- 中文比较页 fixture：comparison page type、comparison/definition/statistic signals、unsupported claim 与 sourced numeric claim 的规则表现
+- 真实品牌站 excerpt fixture：Shopify Plus 落地页、Ahrefs keyword research guide、Ahrefs SEO vs. SEM 文章、Moz Beginner's Guide 的 parser / geo_signals / page_content_profile / rule_checks 回归
 - comparison table / docs how-to procedure / thin content / multi-H1 bad structure
 - RDFa article / OpenGraph-only landing / navigation-heavy low-content
-- snapshot `evidence.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
+- snapshot `evidence.json` / `page_content_profile.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
 - `PageContentProfile` article/home/injection 风险构建测试
 - `RuleChecks` readiness 规则：`selection.readiness_low`、`absorption.readiness_low`
+- readiness 阈值冻结测试：article strong / product mixed / docs mixed / comparison weak / navigation weak
+- `PageEvidencePack` schema 文件与 Pydantic model 对齐
+- `PageContentProfile` schema 文件与 Pydantic model 对齐
+- 公开 `page_content_profile` 最小稳定子集 contract：创建分析与读取分析响应均返回摘要对象，且不会泄露 `answer_units`、`claim_candidates`、`content_gaps` 等内部字段
+- `RuleChecks v1` P0 冻结矩阵：18 条规则均具备 pass 与 warning/failed 双侧样本覆盖
+- 抓取层性能回归：URL public validation 在单次分析内可被复用，辅助资源抓取改为 bundle 并发路径，超大 `Content-Length` 响应会在读 body 前失败
+- failed / warning `RuleChecks` 的 `evidence_refs` 可解析到 `PageEvidencePack` 或 `PageContentProfile`
 
 已知验证噪声：
 
@@ -174,26 +212,22 @@
 
 当前风险：
 
-- 解析栈虽已接入，但真实样本覆盖仍不足
-- `structured_data` 粒度和 `evidence_ref` 稳定性仍需用更多 fixture 固化
-- 最小 `PageContentProfile` 已落地，但尚未决定是否纳入 API 返回或后续诊断输入契约
-- `RuleChecks` 已开始读取 `PageContentProfile`，但 readiness 阈值与 finding 文案仍需更多 fixture 固化
-- 是否需要动态 fallback provider 仍未有样本证据支撑
+- 最小稳定公开子集已冻结，但完整 `PageContentProfile` 仍属内部对象；后续如需公开更多字段，应使用新增字段或版本化方式，避免破坏当前 contract
+- 抓取层虽已完成一次性能优化，但当前仍缺浏览器渲染 fallback、重复分析结果缓存和更真实中文站点压力样本
+- 中文页面的产品页 / 文档页 / 比较页已进入正式 fixture 回归，但更真实的中文站点 HTML 仍不足
+- 当前真实 excerpt 已覆盖 Shopify / Ahrefs / Moz，但品牌与行业分布仍偏窄，且仍缺稳定可抓取的第二个真实产品型品牌域
+- 是否需要动态 fallback provider 仍未有样本证据支撑；如后续引入，应放在当前 fetcher/service 边界之后并保持公开 contract 不变
 
 ## 8. 下一阶段
 
 下一阶段只做以下工作：
 
-1. 继续补更多 HTML fixture 和 snapshot 样本
-2. 继续细化 `evidence_ref` 稳定性
-3. 冻结 `PageEvidencePack v1`
-4. 决定最小 `PageContentProfile` 是否以及如何对外暴露给后续消费层
-5. 继续用 fixture 固化 `RuleChecks v1`，尤其是 readiness 规则阈值与 finding 口径
-6. 在冻结过程中继续保留 `PageContentProfile v1` 所需的 page type、entity、claim/evidence、schema alignment 和 readiness 输入信号
+1. 基于已冻结 `page_type`、`failure_type`、readiness 信号推进 `MethodSelector v0`
+2. 继续维持 `apps/api/app/page_evidence` 冻结，只接受回归修复、兼容性维护和不破坏 contract 的实现增强
+3. 在有真实样本证据时，再评估浏览器渲染 fallback、外部抓取 provider 或进一步性能优化
 
 完成这些之前，不进入：
 
-- MethodSelector
 - DeepSeek Diagnosis
 - pgvector / hybrid retrieval
 - 完整前端报告 UI

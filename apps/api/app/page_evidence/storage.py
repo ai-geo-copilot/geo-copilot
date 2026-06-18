@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from uuid import UUID
 
-from .models import AnalysisResult, PageEvidencePack, RuleCheck
+from .models import AnalysisResult, PageContentProfile, PageEvidencePack, RuleCheck
 
 
 class SnapshotStorage:
@@ -20,6 +20,7 @@ class SnapshotStorage:
         html: str,
         clean_markdown: str,
         pack: PageEvidencePack,
+        profile: PageContentProfile,
         rule_checks: list[RuleCheck],
         result: AnalysisResult,
     ) -> str:
@@ -29,6 +30,10 @@ class SnapshotStorage:
         (snapshot_dir / "clean.md").write_text(clean_markdown, encoding="utf-8")
         (snapshot_dir / "evidence.json").write_text(
             json.dumps(pack.model_dump(mode="json"), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (snapshot_dir / "page_content_profile.json").write_text(
+            json.dumps(profile.model_dump(mode="json"), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
         (snapshot_dir / "rule_checks.json").write_text(

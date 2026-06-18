@@ -4,9 +4,9 @@ from .models import PageContentProfile, PageEvidencePack, RuleCheck
 from .page_content_profile import build_page_content_profile
 
 
-def build_rule_checks(pack: PageEvidencePack) -> list[RuleCheck]:
+def build_rule_checks(pack: PageEvidencePack, profile: PageContentProfile | None = None) -> list[RuleCheck]:
     findings: list[RuleCheck] = []
-    profile = build_page_content_profile(pack)
+    profile = profile or build_page_content_profile(pack)
 
     _append_metadata_check(findings, pack, "title", pack.metadata.title.value, "high")
     _append_metadata_check(findings, pack, "description", pack.metadata.description.value, "medium")

@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, HttpUrl
 
 from ..page_evidence import PageEvidenceService
-from ..page_evidence.models import AnalysisResult, PageEvidencePack, RuleCheck
+from ..page_evidence.models import AnalysisResult, PageEvidencePack, PublicPageContentProfile, RuleCheck
+from ..page_evidence.page_content_profile import build_public_page_content_profile
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
@@ -26,6 +27,7 @@ class AnalysisResponse(BaseModel):
     language: str
     error_code: str | None = None
     page_evidence: PageEvidencePack | None = None
+    page_content_profile: PublicPageContentProfile | None = None
     rule_checks: list[RuleCheck] = Field(default_factory=list)
     snapshot_dir: str | None = None
 
@@ -42,7 +44,21 @@ class FollowUpResponse(BaseModel):
 
 
 def _to_response(result: AnalysisResult) -> AnalysisResponse:
-    return AnalysisResponse(**result.model_dump())
+    return AnalysisResponse(
+        id=result.id,
+        input_url=result.input_url,
+        status=result.status,
+        language=result.language,
+        error_code=result.error_code,
+        page_evidence=result.page_evidence,
+        page_content_profile=(
+            None
+            if result.page_content_profile is None
+            else build_public_page_content_profile(result.page_content_profile)
+        ),
+        rule_checks=result.rule_checks,
+        snapshot_dir=result.snapshot_dir,
+    )
 
 
 @router.post("", response_model=AnalysisResponse, status_code=status.HTTP_200_OK)

@@ -57,6 +57,7 @@ def test_build_geo_signals_detects_product_microdata_and_alignment_problems() ->
     assert product_signals.page_type_hint == "product"
     assert product_signals.structured_data_profile.primary_type == "Product"
     assert product_signals.structured_data_profile.property_completeness > 0.7
+    assert product_signals.structured_data_profile.visible_alignment in {"good", "partial"}
     assert mismatch_signals.page_type_hint == "product"
     assert mismatch_signals.structured_data_profile.visible_alignment == "poor"
 
@@ -105,8 +106,55 @@ def test_build_geo_signals_supports_rdfa_opengraph_and_navigation_heavy_pages() 
 
     assert rdfa_parsed.structured_data.rdfa
     assert rdfa_signals.structured_data_profile.types_detected
+    assert rdfa_signals.structured_data_profile.visible_alignment in {"good", "partial"}
     assert opengraph_signals.structured_data_profile.types_detected
+    assert opengraph_signals.structured_data_profile.visible_alignment in {"good", "partial"}
     assert opengraph_signals.page_type_hint == "landing"
     assert nav_signals.page_type_hint == "home"
     assert nav_metrics.boilerplate_ratio > 0
     assert nav_signals.boilerplate_metrics.main_content_confidence < 0.5
+
+
+def test_build_geo_signals_supports_cjk_product_fixture() -> None:
+    parsed, metrics, signals = _signals_for(
+        "cjk_product_page.html",
+        "https://example.com/zh/products/geo-helper-pro",
+    )
+
+    assert parsed.structured_data.json_ld
+    assert signals.page_type_hint == "product"
+    assert signals.primary_entity_candidates[0].name == "Geo小助理 Pro"
+    assert signals.primary_entity_candidates[0].entity_type == "Product"
+    assert metrics.cjk_char_count > 0
+    assert signals.boilerplate_metrics.substance_score == metrics.cjk_char_count
+    assert any(item.unit_type == "definition" for item in signals.answer_unit_candidates)
+    assert any(item.unit_type == "statistic" for item in signals.answer_unit_candidates)
+    assert signals.statistics
+    assert signals.statistics[0].has_source is True
+    assert signals.structured_data_profile.primary_type == "Product"
+    assert signals.structured_data_profile.visible_alignment == "good"
+
+
+def test_build_geo_signals_supports_cjk_docs_and_comparison_fixtures() -> None:
+    _, docs_metrics, docs_signals = _signals_for(
+        "cjk_docs_howto_page.html",
+        "https://example.com/zh/docs/setup-geo-checks",
+    )
+    _, comparison_metrics, comparison_signals = _signals_for(
+        "cjk_comparison_page.html",
+        "https://example.com/zh/compare/geo-helper-vs-searchstack",
+    )
+
+    assert docs_metrics.cjk_char_count > 0
+    assert docs_signals.page_type_hint == "docs"
+    assert any(item.unit_type == "definition" for item in docs_signals.answer_unit_candidates)
+    assert any(item.unit_type == "procedure" for item in docs_signals.answer_unit_candidates)
+    assert any(item.unit_type == "statistic" for item in docs_signals.answer_unit_candidates)
+    assert docs_signals.statistics[0].has_source is True
+
+    assert comparison_metrics.cjk_char_count > 0
+    assert comparison_signals.page_type_hint == "comparison"
+    assert any(item.unit_type == "comparison" for item in comparison_signals.answer_unit_candidates)
+    assert any(item.unit_type == "definition" for item in comparison_signals.answer_unit_candidates)
+    assert any(item.claim_type == "statistic" for item in comparison_signals.claim_candidates)
+    assert comparison_signals.statistics[0].has_source is True

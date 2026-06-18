@@ -79,3 +79,36 @@ def test_parse_html_extracts_rdfa_and_opengraph_only_structured_data() -> None:
     assert opengraph_parsed.structured_data.opengraph
     assert opengraph_parsed.structured_data.opengraph[0].kind == "opengraph"
     assert opengraph_parsed.structured_data.json_ld == []
+
+
+def test_parse_html_extracts_cjk_product_fixture() -> None:
+    html = (FIXTURES_DIR / "cjk_product_page.html").read_text(encoding="utf-8")
+
+    parsed = parse_html(html, "https://example.com/zh/products/geo-helper-pro")
+
+    assert parsed.metadata.title.value == "Geo小助理 Pro 产品介绍"
+    assert parsed.metadata.lang.value == "zh-CN"
+    assert parsed.metadata.canonical.value == "https://example.com/zh/products/geo-helper-pro"
+    assert parsed.structure.headings[0].text == "Geo小助理 Pro"
+    assert parsed.structured_data.json_ld
+    assert parsed.structured_data.json_ld[0].data["@type"] == "Product"
+    assert any("12800 元 / 年" in block.text for block in parsed.content_blocks)
+    assert "来源：2026 年 4 月内部基准测试报告" in parsed.clean_markdown
+
+
+def test_parse_html_extracts_cjk_docs_and_comparison_fixtures() -> None:
+    docs_html = (FIXTURES_DIR / "cjk_docs_howto_page.html").read_text(encoding="utf-8")
+    comparison_html = (FIXTURES_DIR / "cjk_comparison_page.html").read_text(encoding="utf-8")
+
+    docs_parsed = parse_html(docs_html, "https://example.com/zh/docs/setup-geo-checks")
+    comparison_parsed = parse_html(comparison_html, "https://example.com/zh/compare/geo-helper-vs-searchstack")
+
+    assert docs_parsed.metadata.lang.value == "zh-CN"
+    assert docs_parsed.structure.headings[1].text == "这是什么"
+    assert any("步骤 1" in block.text for block in docs_parsed.content_blocks)
+    assert "实施手册" in docs_parsed.clean_markdown
+
+    assert comparison_parsed.metadata.title.value == "Geo小助理 与 SearchStack 对比"
+    assert comparison_parsed.structure.tables
+    assert comparison_parsed.structure.tables[0].text.startswith("维度")
+    assert any("92%" in block.text for block in comparison_parsed.content_blocks)

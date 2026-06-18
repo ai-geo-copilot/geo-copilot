@@ -1,0 +1,622 @@
+{
+  "$defs": {
+    "AnswerUnitCandidate": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "unit_type": {
+          "enum": [
+            "definition",
+            "fact",
+            "statistic",
+            "comparison",
+            "procedure",
+            "faq",
+            "quote",
+            "claim",
+            "unknown"
+          ],
+          "title": "Unit Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "support_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Support Refs",
+          "type": "array"
+        },
+        "source_tag": {
+          "title": "Source Tag",
+          "type": "string"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "unit_type",
+        "text",
+        "source_tag",
+        "confidence"
+      ],
+      "title": "AnswerUnitCandidate",
+      "type": "object"
+    },
+    "BoilerplateMetrics": {
+      "properties": {
+        "evidence_ref": {
+          "default": "geo_signals.boilerplate_metrics",
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "content_block_count": {
+          "default": 0,
+          "title": "Content Block Count",
+          "type": "integer"
+        },
+        "word_count": {
+          "default": 0,
+          "title": "Word Count",
+          "type": "integer"
+        },
+        "cjk_char_count": {
+          "default": 0,
+          "title": "Cjk Char Count",
+          "type": "integer"
+        },
+        "substance_score": {
+          "default": 0,
+          "title": "Substance Score",
+          "type": "integer"
+        },
+        "main_content_confidence": {
+          "default": 0.0,
+          "title": "Main Content Confidence",
+          "type": "number"
+        },
+        "boilerplate_ratio": {
+          "default": 1.0,
+          "title": "Boilerplate Ratio",
+          "type": "number"
+        },
+        "first_screen_summary_present": {
+          "default": false,
+          "title": "First Screen Summary Present",
+          "type": "boolean"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "title": "BoilerplateMetrics",
+      "type": "object"
+    },
+    "ClaimCandidate": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "claim_type": {
+          "enum": [
+            "feature",
+            "benefit",
+            "statistic",
+            "comparison",
+            "pricing",
+            "guarantee",
+            "generic"
+          ],
+          "title": "Claim Type",
+          "type": "string"
+        },
+        "needs_support": {
+          "title": "Needs Support",
+          "type": "boolean"
+        },
+        "nearby_evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Nearby Evidence Refs",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "text",
+        "claim_type",
+        "needs_support"
+      ],
+      "title": "ClaimCandidate",
+      "type": "object"
+    },
+    "ContentOutlineItem": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "heading": {
+          "title": "Heading",
+          "type": "string"
+        },
+        "level": {
+          "title": "Level",
+          "type": "integer"
+        },
+        "section_type": {
+          "enum": [
+            "definition",
+            "evidence",
+            "comparison",
+            "procedure",
+            "faq",
+            "generic"
+          ],
+          "title": "Section Type",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "heading",
+        "level",
+        "section_type"
+      ],
+      "title": "ContentOutlineItem",
+      "type": "object"
+    },
+    "EvidenceCandidate": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "evidence_type": {
+          "enum": [
+            "source_link",
+            "statistic",
+            "table",
+            "quote",
+            "schema",
+            "benchmark",
+            "generic"
+          ],
+          "title": "Evidence Type",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "support_label": {
+          "default": "unknown",
+          "enum": [
+            "full",
+            "partial",
+            "none",
+            "unknown"
+          ],
+          "title": "Support Label",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "text",
+        "evidence_type"
+      ],
+      "title": "EvidenceCandidate",
+      "type": "object"
+    },
+    "PrimaryEntityCandidate": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "entity_type": {
+          "enum": [
+            "Product",
+            "Organization",
+            "Article",
+            "WebPage",
+            "Unknown"
+          ],
+          "title": "Entity Type",
+          "type": "string"
+        },
+        "confidence": {
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "name",
+        "entity_type",
+        "confidence"
+      ],
+      "title": "PrimaryEntityCandidate",
+      "type": "object"
+    },
+    "ReadinessScore": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "status": {
+          "enum": [
+            "strong",
+            "mixed",
+            "weak"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "score",
+        "status"
+      ],
+      "title": "ReadinessScore",
+      "type": "object"
+    },
+    "SafetyFlag": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "flag_type": {
+          "enum": [
+            "html_comment_instruction",
+            "metadata_instruction",
+            "hidden_text_instruction",
+            "script_style_ignored",
+            "suspicious_ai_directive"
+          ],
+          "title": "Flag Type",
+          "type": "string"
+        },
+        "risk_level": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Risk Level",
+          "type": "string"
+        },
+        "snippet_hash": {
+          "title": "Snippet Hash",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "flag_type",
+        "risk_level",
+        "snippet_hash"
+      ],
+      "title": "SafetyFlag",
+      "type": "object"
+    },
+    "StatisticCandidate": {
+      "properties": {
+        "evidence_ref": {
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "value_text": {
+          "title": "Value Text",
+          "type": "string"
+        },
+        "source_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Url"
+        },
+        "has_source": {
+          "default": false,
+          "title": "Has Source",
+          "type": "boolean"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "value_text"
+      ],
+      "title": "StatisticCandidate",
+      "type": "object"
+    },
+    "StructuredDataProfile": {
+      "properties": {
+        "evidence_ref": {
+          "default": "geo_signals.structured_data_profile",
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "types_detected": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Types Detected",
+          "type": "array"
+        },
+        "primary_type": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Primary Type"
+        },
+        "property_completeness": {
+          "default": 0.0,
+          "title": "Property Completeness",
+          "type": "number"
+        },
+        "visible_alignment": {
+          "default": "unknown",
+          "enum": [
+            "good",
+            "partial",
+            "poor",
+            "unknown"
+          ],
+          "title": "Visible Alignment",
+          "type": "string"
+        },
+        "missing_recommended_properties": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Missing Recommended Properties",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        }
+      },
+      "title": "StructuredDataProfile",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "source_evidence_pack_version": {
+      "const": "v1",
+      "default": "v1",
+      "title": "Source Evidence Pack Version",
+      "type": "string"
+    },
+    "input_url": {
+      "title": "Input Url",
+      "type": "string"
+    },
+    "normalized_url": {
+      "title": "Normalized Url",
+      "type": "string"
+    },
+    "page_type": {
+      "default": "unknown",
+      "enum": [
+        "article",
+        "product",
+        "docs",
+        "landing",
+        "comparison",
+        "home",
+        "unknown"
+      ],
+      "title": "Page Type",
+      "type": "string"
+    },
+    "page_type_evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Page Type Evidence Refs",
+      "type": "array"
+    },
+    "primary_entity_candidates": {
+      "items": {
+        "$ref": "#/$defs/PrimaryEntityCandidate"
+      },
+      "title": "Primary Entity Candidates",
+      "type": "array"
+    },
+    "content_outline": {
+      "items": {
+        "$ref": "#/$defs/ContentOutlineItem"
+      },
+      "title": "Content Outline",
+      "type": "array"
+    },
+    "answer_units": {
+      "items": {
+        "$ref": "#/$defs/AnswerUnitCandidate"
+      },
+      "title": "Answer Units",
+      "type": "array"
+    },
+    "claim_candidates": {
+      "items": {
+        "$ref": "#/$defs/ClaimCandidate"
+      },
+      "title": "Claim Candidates",
+      "type": "array"
+    },
+    "evidence_candidates": {
+      "items": {
+        "$ref": "#/$defs/EvidenceCandidate"
+      },
+      "title": "Evidence Candidates",
+      "type": "array"
+    },
+    "statistics": {
+      "items": {
+        "$ref": "#/$defs/StatisticCandidate"
+      },
+      "title": "Statistics",
+      "type": "array"
+    },
+    "structured_data_profile": {
+      "$ref": "#/$defs/StructuredDataProfile"
+    },
+    "boilerplate_metrics": {
+      "$ref": "#/$defs/BoilerplateMetrics"
+    },
+    "prompt_injection_risk": {
+      "default": "low",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "title": "Prompt Injection Risk",
+      "type": "string"
+    },
+    "safety_flags": {
+      "items": {
+        "$ref": "#/$defs/SafetyFlag"
+      },
+      "title": "Safety Flags",
+      "type": "array"
+    },
+    "selection_readiness": {
+      "$ref": "#/$defs/ReadinessScore"
+    },
+    "absorption_readiness": {
+      "$ref": "#/$defs/ReadinessScore"
+    },
+    "content_gaps": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Content Gaps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "input_url",
+    "normalized_url",
+    "selection_readiness",
+    "absorption_readiness"
+  ],
+  "title": "PageContentProfile",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/page-content-profile.schema.json"
+}

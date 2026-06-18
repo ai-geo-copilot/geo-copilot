@@ -9,10 +9,11 @@ from .errors import PageEvidenceError
 from .fetcher import PageFetcher
 from .geo_signals import build_geo_signals
 from .models import AnalysisResult, CrawlAccessEvidence, PageEvidencePack, StorageEvidence
+from .page_content_profile import build_page_content_profile
 from .parser import parse_html
 from .rule_checks import build_rule_checks
 from .storage import SnapshotStorage
-from .url_safety import Resolver, validate_public_url
+from .url_safety import Resolver
 
 
 class PageEvidenceService:
@@ -35,7 +36,7 @@ class PageEvidenceService:
 
     def analyze(self, url: str, language: str) -> AnalysisResult:
         analysis_id = uuid4()
-        normalized_url = validate_public_url(url, resolver=self._resolver)
+        normalized_url = self._fetcher.validate_public_url(url)
         fetched = self._fetcher.fetch_html(normalized_url)
         parsed = parse_html(fetched.html, fetched.fetch_info.final_url)
         content_metrics = analyze_content_blocks(parsed.content_blocks, parsed.structure)
@@ -57,16 +58,7 @@ class PageEvidenceService:
             normalized_url=normalized_url,
             fetch=fetched.fetch_info,
             metadata=parsed.metadata,
-            crawl_access=CrawlAccessEvidence(
-                robots_txt=self._fetcher.fetch_auxiliary(fetched.fetch_info.final_url, "/robots.txt", "crawl_access.robots_txt"),
-                sitemap_xml=self._fetcher.fetch_auxiliary(fetched.fetch_info.final_url, "/sitemap.xml", "crawl_access.sitemap_xml"),
-                llms_txt=self._fetcher.fetch_auxiliary(fetched.fetch_info.final_url, "/llms.txt", "crawl_access.llms_txt"),
-                llms_full_txt=self._fetcher.fetch_auxiliary(
-                    fetched.fetch_info.final_url,
-                    "/llms-full.txt",
-                    "crawl_access.llms_full_txt",
-                ),
-            ),
+            crawl_access=self._build_crawl_access(fetched.fetch_info.final_url),
             structure=parsed.structure,
             structured_data=parsed.structured_data,
             content_blocks=parsed.content_blocks,
@@ -75,7 +67,8 @@ class PageEvidenceService:
             geo_signals=geo_signals,
             storage=StorageEvidence(analysis_id=analysis_id, snapshot_dir=""),
         )
-        rule_checks = build_rule_checks(pack)
+        profile = build_page_content_profile(pack)
+        rule_checks = build_rule_checks(pack, profile)
         snapshot_dir = str(self._storage.get_snapshot_dir(analysis_id))
         pack.storage.snapshot_dir = snapshot_dir
         result = AnalysisResult(
@@ -84,6 +77,7 @@ class PageEvidenceService:
             status="completed",
             language=language,
             page_evidence=pack,
+            page_content_profile=profile,
             rule_checks=rule_checks,
             snapshot_dir=snapshot_dir,
         )
@@ -92,10 +86,28 @@ class PageEvidenceService:
             fetched.html,
             parsed.clean_markdown,
             pack,
+            profile,
             rule_checks,
             result,
         )
         return result
+
+    def _build_crawl_access(self, page_url: str) -> CrawlAccessEvidence:
+        fetched_resources = self._fetcher.fetch_auxiliary_bundle(
+            page_url,
+            [
+                ("/robots.txt", "crawl_access.robots_txt"),
+                ("/sitemap.xml", "crawl_access.sitemap_xml"),
+                ("/llms.txt", "crawl_access.llms_txt"),
+                ("/llms-full.txt", "crawl_access.llms_full_txt"),
+            ],
+        )
+        return CrawlAccessEvidence(
+            robots_txt=fetched_resources["crawl_access.robots_txt"],
+            sitemap_xml=fetched_resources["crawl_access.sitemap_xml"],
+            llms_txt=fetched_resources["crawl_access.llms_txt"],
+            llms_full_txt=fetched_resources["crawl_access.llms_full_txt"],
+        )
 
     def analyze_safe(self, url: str, language: str) -> AnalysisResult:
         try:

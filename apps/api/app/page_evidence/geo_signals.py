@@ -28,7 +28,7 @@ from .structured_data import collect_structured_type_refs, iter_structured_data_
 _DEFINITION_PATTERNS = (r"\bis\b", r"refers to", r"defined as", r"是什么", r"是一种", r"指的是")
 _COMPARISON_PATTERNS = (r"\bvs\b", r"compare", r"comparison", r"alternative", r"对比", r"比较")
 _DOCS_PATTERNS = (r"how to", r"guide", r"docs", r"\bapi\b", r"steps", r"tutorial", r"教程", r"指南", r"步骤")
-_CLAIM_PATTERNS = (r"\bbest\b", r"\bfastest\b", r"leading", r"唯一", r"保证", r"提升", r"降低", r"支持", r"兼容")
+_CLAIM_PATTERNS = (r"\bbest\b", r"\bfastest\b", r"leading", r"领先", r"唯一", r"保证", r"提升", r"降低", r"支持", r"兼容")
 _SOURCE_HINT_PATTERNS = (r"according to", r"source", r"report", r"study", r"benchmark", r"citation", r"来源", r"研究")
 _NUMERIC_PATTERN = re.compile(r"(\d[\d,]*(?:\.\d+)?%?|\$\d[\d,]*(?:\.\d+)?)")
 
@@ -300,15 +300,27 @@ def _build_evidence_candidates(
 
 def _build_statistics(content_blocks: list[ContentBlock], structure: StructureEvidence) -> list[StatisticCandidate]:
     statistics: list[StatisticCandidate] = []
-    for block in content_blocks:
+    for index, block in enumerate(content_blocks):
         if not _NUMERIC_PATTERN.search(block.text):
             continue
+        support_refs = [block.evidence_ref]
+        has_source = _matches_any(block.text.casefold(), _SOURCE_HINT_PATTERNS)
+        if not has_source:
+            for offset in (-1, 1):
+                nearby_index = index + offset
+                if nearby_index < 0 or nearby_index >= len(content_blocks):
+                    continue
+                nearby_block = content_blocks[nearby_index]
+                if _matches_any(nearby_block.text.casefold(), _SOURCE_HINT_PATTERNS):
+                    has_source = True
+                    support_refs.append(nearby_block.evidence_ref)
+                    break
         statistics.append(
             StatisticCandidate(
                 evidence_ref=block.evidence_ref,
                 value_text=block.text,
-                has_source=_matches_any(block.text.casefold(), _SOURCE_HINT_PATTERNS),
-                evidence_refs=[block.evidence_ref],
+                has_source=has_source,
+                evidence_refs=support_refs,
             )
         )
     for table in structure.tables:
@@ -474,24 +486,34 @@ def _compute_visible_alignment(visible_text: str, structured_data: StructuredDat
     prices: list[str] = []
     ratings: list[str] = []
     for item in iter_structured_data_items(structured_data):
-        for key in ("name", "headline"):
-            value = _get_nested_value(item.data, key)
-            if isinstance(value, str):
-                names.append(value)
-        for key in ("price", "ratingValue", "reviewCount"):
-            value = _get_nested_value(item.data, key)
-            if isinstance(value, str):
-                if key == "price":
-                    prices.append(value)
-                else:
-                    ratings.append(value)
-    if names and not any(name.casefold() in lowered_visible for name in names):
+        names.extend(_collect_property_values(item.data, {"name", "headline", "title"}))
+        prices.extend(_collect_property_values(item.data, {"price"}))
+        ratings.extend(_collect_property_values(item.data, {"ratingvalue", "reviewcount"}))
+
+    names = list(OrderedDict.fromkeys(value for value in names if value))
+    prices = list(OrderedDict.fromkeys(value for value in prices if value))
+    ratings = list(OrderedDict.fromkeys(value for value in ratings if value))
+
+    names_visible = any(name.casefold() in lowered_visible for name in names)
+    numeric_values_visible = all(value in visible_text for value in [*prices, *ratings] if value)
+
+    if names and not names_visible:
         return "poor"
     if primary_type == "Product":
-        if (prices or ratings) and not all(value in visible_text for value in [*prices, *ratings] if value):
+        has_product_visibility_cues = any(
+            cue in lowered_visible
+            for cue in ("price", "pricing", "usd", "review", "reviews", "rating", "rated", "stars", "价格", "定价", "评分", "口碑", "评论")
+        )
+        has_product_visibility_negation = any(
+            cue in lowered_visible
+            for cue in ("without visible", "no visible", "missing", "not shown", "未显示", "缺少", "没有")
+        )
+        if (prices or ratings) and not numeric_values_visible:
+            if has_product_visibility_cues and not has_product_visibility_negation:
+                return "partial"
             return "poor"
     if names:
-        return "good" if (not prices and not ratings) or all(value in visible_text for value in [*prices, *ratings] if value) else "partial"
+        return "good" if (not prices and not ratings) or numeric_values_visible else "partial"
     return "partial"
 
 
@@ -522,6 +544,42 @@ def _get_nested_value(data: object, target_key: str) -> object | None:
             if found is not None:
                 return found
     return None
+
+
+def _collect_property_values(data: object, target_keys: set[str]) -> list[str]:
+    values: list[str] = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            normalized_key = _normalize_schema_key(key)
+            if normalized_key in target_keys:
+                values.extend(_coerce_schema_text_values(value))
+            values.extend(_collect_property_values(value, target_keys))
+    elif isinstance(data, list):
+        for item in data:
+            values.extend(_collect_property_values(item, target_keys))
+    return values
+
+
+def _coerce_schema_text_values(value: object) -> list[str]:
+    if isinstance(value, str):
+        stripped = value.strip()
+        return [stripped] if stripped else []
+    if isinstance(value, list):
+        values: list[str] = []
+        for item in value:
+            values.extend(_coerce_schema_text_values(item))
+        return values
+    if isinstance(value, dict):
+        if "@value" in value:
+            return _coerce_schema_text_values(value.get("@value"))
+    return []
+
+
+def _normalize_schema_key(key: str) -> str:
+    candidate = key.rsplit("/", 1)[-1]
+    candidate = candidate.rsplit("#", 1)[-1]
+    candidate = candidate.rsplit(":", 1)[-1]
+    return candidate.casefold()
 
 
 def _get_primary_schema_label(data: object) -> object | None:

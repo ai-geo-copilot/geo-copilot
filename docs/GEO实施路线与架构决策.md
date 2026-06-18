@@ -84,9 +84,9 @@ flowchart TD
 
 `apps/api/app/page_evidence` 是当前唯一完整模块优先级。理由已经被代码现状和开发状态共同证明：
 
-- `POST /api/analyses` 仍是占位接口。
-- `page-evidence-pack.schema.json` 仍是 v0 占位契约。
-- 当前还没有任何真实抓取、解析、规则判断和稳定证据引用。
+- `POST /api/analyses` 已完成同步单 URL 分析闭环。
+- `PageEvidencePack v1`、`RuleChecks v1`、snapshot 与 API base report 已冻结。
+- 当前公开 API 已冻结为 `page_evidence + page_content_profile(minimal public subset) + rule_checks + snapshot_dir`，完整内部 `PageContentProfile` 不对外暴露。
 
 因此当前不应把主精力转到 DeepSeek、RAG 或复杂前端。
 

@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
-from .models import PageContentProfile, PageEvidencePack, ReadinessScore
+from .models import (
+    PageContentProfile,
+    PageEvidencePack,
+    PublicPageContentProfile,
+    PublicPrimaryEntity,
+    PublicReadinessScore,
+    PublicStructuredDataProfile,
+    ReadinessScore,
+)
 
 
 def build_page_content_profile(pack: PageEvidencePack) -> PageContentProfile:
@@ -29,6 +37,40 @@ def build_page_content_profile(pack: PageEvidencePack) -> PageContentProfile:
         selection_readiness=selection_readiness,
         absorption_readiness=absorption_readiness,
         content_gaps=_build_content_gaps(pack),
+    )
+
+
+def build_public_page_content_profile(profile: PageContentProfile) -> PublicPageContentProfile:
+    primary_entity = profile.primary_entity_candidates[0] if profile.primary_entity_candidates else None
+    return PublicPageContentProfile(
+        page_type=profile.page_type,
+        page_type_evidence_refs=list(profile.page_type_evidence_refs),
+        primary_entity=(
+            None
+            if primary_entity is None
+            else PublicPrimaryEntity(
+                name=primary_entity.name,
+                entity_type=primary_entity.entity_type,
+                confidence=primary_entity.confidence,
+                evidence_refs=list(primary_entity.evidence_refs),
+            )
+        ),
+        selection_readiness=PublicReadinessScore(
+            score=profile.selection_readiness.score,
+            status=profile.selection_readiness.status,
+            evidence_refs=list(profile.selection_readiness.evidence_refs),
+        ),
+        absorption_readiness=PublicReadinessScore(
+            score=profile.absorption_readiness.score,
+            status=profile.absorption_readiness.status,
+            evidence_refs=list(profile.absorption_readiness.evidence_refs),
+        ),
+        prompt_injection_risk=profile.prompt_injection_risk,
+        structured_data=PublicStructuredDataProfile(
+            primary_type=profile.structured_data_profile.primary_type,
+            visible_alignment=profile.structured_data_profile.visible_alignment,
+            evidence_refs=list(profile.structured_data_profile.evidence_refs),
+        ),
     )
 
 

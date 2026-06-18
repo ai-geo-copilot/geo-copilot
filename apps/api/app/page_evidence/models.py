@@ -255,6 +255,36 @@ class PageContentProfile(BaseModel):
     content_gaps: list[str] = Field(default_factory=list)
 
 
+class PublicPrimaryEntity(BaseModel):
+    name: str
+    entity_type: Literal["Product", "Organization", "Article", "WebPage", "Unknown"]
+    confidence: float
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PublicReadinessScore(BaseModel):
+    score: float
+    status: Literal["strong", "mixed", "weak"]
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PublicStructuredDataProfile(BaseModel):
+    primary_type: str | None = None
+    visible_alignment: Literal["good", "partial", "poor", "unknown"] = "unknown"
+    evidence_refs: list[str] = Field(default_factory=list)
+
+
+class PublicPageContentProfile(BaseModel):
+    profile_version: Literal["v1-minimal-public"] = "v1-minimal-public"
+    page_type: Literal["article", "product", "docs", "landing", "comparison", "home", "unknown"] = "unknown"
+    page_type_evidence_refs: list[str] = Field(default_factory=list)
+    primary_entity: PublicPrimaryEntity | None = None
+    selection_readiness: PublicReadinessScore
+    absorption_readiness: PublicReadinessScore
+    prompt_injection_risk: Literal["low", "medium", "high"] = "low"
+    structured_data: PublicStructuredDataProfile = Field(default_factory=PublicStructuredDataProfile)
+
+
 class StorageEvidence(BaseModel):
     analysis_id: UUID
     snapshot_dir: str
@@ -292,5 +322,6 @@ class AnalysisResult(BaseModel):
     language: str
     error_code: str | None = None
     page_evidence: PageEvidencePack | None = None
+    page_content_profile: PageContentProfile | None = None
     rule_checks: list[RuleCheck] = Field(default_factory=list)
     snapshot_dir: str | None = None
