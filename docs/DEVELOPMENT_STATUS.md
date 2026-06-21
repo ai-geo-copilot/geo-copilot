@@ -1,7 +1,7 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-18  
+最后更新：2026-06-21  
 唯一开发状态源：是
 
 ## 1. 使用规则
@@ -135,6 +135,8 @@
 - `docs/GEO论文优化方法知识库.md` 已补充研究来源、底层模型、schema alignment、page-type-aware extraction 和 safe prompt pack 方法卡。
 - `docs/模块开发补充/HTTP层GEO开发流程与完成标准.md` 已新增，用作后续完成 HTTP / Page Evidence 模块的执行规格。
 - `docs/README.md` 已把该补充文档加入正式阅读入口。
+- `docs/后期开发/http层·遗漏.md` 已新增，用作记录 HTTP / Page Evidence 完整产品形态下的后期增强 backlog，不改变当前阶段优先级。
+- `docs/README.md` 已把该后期增强文档加入正式阅读入口。
 
 当前文档口径：
 
@@ -144,6 +146,7 @@
 - 当前不因文档方法论补强而改变“先冻结 PageEvidencePack v1 和 RuleChecks v1”的开发优先级。
 - `docs/模块开发补充/HTTP层GEO开发流程与完成标准.md` 已更新为当前执行顺序：先冻结 `PageEvidencePack / evidence_ref / fixtures`，再最小实现 `PageContentProfile` read model，最后冻结 `RuleChecks v1`。
 - HTTP 模块完成口径是 `PageEvidencePack v1 + GEO-ready signals + minimal public PageContentProfile subset + RuleChecks v1 + fixtures + snapshots`，不是接入 DeepSeek。
+- `docs/后期开发/http层·遗漏.md` 只记录后期迭代升级内容，不作为当前 MethodSelector v0 前置条件。
 
 ## 5. 当前边界
 
