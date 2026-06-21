@@ -4,6 +4,12 @@ from uuid import UUID, uuid4
 
 import httpx
 
+from apps.api.app.methods.planner import plan_strategy
+from apps.api.app.methods.selector import select_methods
+from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
+from apps.api.app.safe_prompt.builder import build_safe_prompt_pack
+from apps.api.app.safe_prompt.models import SafePromptPack
+
 from .content_blocks import analyze_content_blocks
 from .errors import PageEvidenceError
 from .fetcher import PageFetcher
@@ -69,6 +75,9 @@ class PageEvidenceService:
         )
         profile = build_page_content_profile(pack)
         rule_checks = build_rule_checks(pack, profile)
+        retrieved_methods = select_methods(profile, rule_checks)
+        strategy_plan = plan_strategy(retrieved_methods, profile, rule_checks)
+        safe_prompt_pack = build_safe_prompt_pack(pack, profile, rule_checks, retrieved_methods, strategy_plan)
         snapshot_dir = str(self._storage.get_snapshot_dir(analysis_id))
         pack.storage.snapshot_dir = snapshot_dir
         result = AnalysisResult(
@@ -89,6 +98,9 @@ class PageEvidenceService:
             profile,
             rule_checks,
             result,
+            retrieved_methods,
+            strategy_plan,
+            safe_prompt_pack,
         )
         return result
 
@@ -123,3 +135,12 @@ class PageEvidenceService:
 
     def get_result(self, analysis_id: UUID) -> AnalysisResult | None:
         return self._storage.load_result(analysis_id)
+
+    def get_retrieved_methods(self, analysis_id: UUID) -> RetrievedMethodPack | None:
+        return self._storage.load_retrieved_methods(analysis_id)
+
+    def get_strategy_plan(self, analysis_id: UUID) -> StrategyPlan | None:
+        return self._storage.load_strategy_plan(analysis_id)
+
+    def get_safe_prompt_pack(self, analysis_id: UUID) -> SafePromptPack | None:
+        return self._storage.load_safe_prompt_pack(analysis_id)

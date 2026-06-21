@@ -1,16 +1,377 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://geo-copilot.local/schemas/deepseek-diagnosis.schema.json",
+  "$defs": {
+    "AssetDraft": {
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "asset_type": {
+          "enum": [
+            "metadata_patch",
+            "heading_patch",
+            "definition_block",
+            "claim_evidence_patch",
+            "numeric_source_patch",
+            "json_ld_patch",
+            "safety_cleanup"
+          ],
+          "title": "Asset Type",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "method_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Method Refs",
+          "type": "array"
+        },
+        "draft_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft Text"
+        },
+        "unknown_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unknown Fields",
+          "type": "array"
+        },
+        "guardrails": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Guardrails",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_id",
+        "asset_type",
+        "evidence_refs",
+        "method_refs"
+      ],
+      "title": "AssetDraft",
+      "type": "object"
+    },
+    "DiagnosisIssue": {
+      "properties": {
+        "issue_id": {
+          "title": "Issue Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "critical"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rule Ids",
+          "type": "array"
+        },
+        "failure_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Types",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "method_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Method Refs",
+          "type": "array"
+        },
+        "factual_status": {
+          "enum": [
+            "supported",
+            "unsupported",
+            "unknown",
+            "not_applicable"
+          ],
+          "title": "Factual Status",
+          "type": "string"
+        },
+        "explanation": {
+          "title": "Explanation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "issue_id",
+        "title",
+        "severity",
+        "evidence_refs",
+        "method_refs",
+        "factual_status",
+        "explanation"
+      ],
+      "title": "DiagnosisIssue",
+      "type": "object"
+    },
+    "DiagnosisScoreBreakdown": {
+      "properties": {
+        "selection": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Selection",
+          "type": "integer"
+        },
+        "absorption": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Absorption",
+          "type": "integer"
+        },
+        "claim_evidence": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Claim Evidence",
+          "type": "integer"
+        },
+        "structure": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Structure",
+          "type": "integer"
+        },
+        "schema_alignment": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Schema Alignment",
+          "type": "integer"
+        },
+        "safety": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Safety",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "selection",
+        "absorption",
+        "claim_evidence",
+        "structure",
+        "schema_alignment",
+        "safety"
+      ],
+      "title": "DiagnosisScoreBreakdown",
+      "type": "object"
+    },
+    "DiagnosisUnknown": {
+      "properties": {
+        "unknown_id": {
+          "title": "Unknown Id",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "related_issue_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Issue Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "unknown_id",
+        "question",
+        "reason"
+      ],
+      "title": "DiagnosisUnknown",
+      "type": "object"
+    },
+    "PriorityAction": {
+      "properties": {
+        "action_id": {
+          "title": "Action Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "issue_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Issue Ids",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "method_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Method Refs",
+          "type": "array"
+        },
+        "action_type": {
+          "enum": [
+            "fix_metadata",
+            "fix_structure",
+            "strengthen_content",
+            "request_evidence",
+            "remove_or_qualify_claim",
+            "align_schema",
+            "remove_unsafe_input"
+          ],
+          "title": "Action Type",
+          "type": "string"
+        },
+        "expected_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Artifacts",
+          "type": "array"
+        },
+        "rationale": {
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_id",
+        "title",
+        "priority",
+        "evidence_refs",
+        "method_refs",
+        "action_type",
+        "rationale"
+      ],
+      "title": "PriorityAction",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "diagnosis_version": {
+      "const": "deepseek-diagnosis-v0",
+      "default": "deepseek-diagnosis-v0",
+      "title": "Diagnosis Version",
+      "type": "string"
+    },
+    "geo_score": {
+      "maximum": 100,
+      "minimum": 0,
+      "title": "Geo Score",
+      "type": "integer"
+    },
+    "score_breakdown": {
+      "$ref": "#/$defs/DiagnosisScoreBreakdown"
+    },
+    "executive_summary": {
+      "title": "Executive Summary",
+      "type": "string"
+    },
+    "issues": {
+      "items": {
+        "$ref": "#/$defs/DiagnosisIssue"
+      },
+      "title": "Issues",
+      "type": "array"
+    },
+    "priority_actions": {
+      "items": {
+        "$ref": "#/$defs/PriorityAction"
+      },
+      "title": "Priority Actions",
+      "type": "array"
+    },
+    "asset_drafts": {
+      "items": {
+        "$ref": "#/$defs/AssetDraft"
+      },
+      "title": "Asset Drafts",
+      "type": "array"
+    },
+    "unknowns": {
+      "items": {
+        "$ref": "#/$defs/DiagnosisUnknown"
+      },
+      "title": "Unknowns",
+      "type": "array"
+    },
+    "validator_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Validator Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "geo_score",
+    "score_breakdown",
+    "executive_summary"
+  ],
   "title": "DeepSeekDiagnosis",
   "type": "object",
-  "required": ["geo_score", "score_breakdown", "executive_summary", "issues", "priority_actions", "asset_drafts", "unknowns"],
-  "properties": {
-    "geo_score": { "type": "integer", "minimum": 0, "maximum": 100 },
-    "score_breakdown": { "type": "object" },
-    "executive_summary": { "type": "string" },
-    "issues": { "type": "array" },
-    "priority_actions": { "type": "array" },
-    "asset_drafts": { "type": "array" },
-    "unknowns": { "type": "array" }
-  }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/deepseek-diagnosis.schema.json"
 }

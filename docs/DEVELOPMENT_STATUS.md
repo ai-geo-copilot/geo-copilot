@@ -1,7 +1,7 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-21  
+最后更新：2026-06-22
 唯一开发状态源：是
 
 ## 1. 使用规则
@@ -21,12 +21,12 @@
 当前阶段：
 
 > HTTP / Page Evidence v1 已完成最终冻结验收。
-> 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + snapshot + API base report + minimal public PageContentProfile subset`。
+> 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + MethodSelector v0 + Strategy Planner v0 + Methods / Strategy read-only API + Safe Prompt Pack v0 + DeepSeek diagnosis output schema/validator + snapshot + API base report + minimal public PageContentProfile subset`。
 > 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy`、`cjk-product`、`cjk-docs`、`cjk-comparison` 六类 synthetic fixture 覆盖，并新增 Shopify / Ahrefs / Moz 的真实 HTML excerpt fixture；当前公开 API 已冻结 `page_content_profile` 最小稳定子集，完整 `PageContentProfile` 继续保留在 service 内部结果、snapshot 和 `analysis.json` 中。本轮已完成一次抓取层性能优化，HTTP 层后续只接受不破坏 contract 的回归修复和实现增强。
 
 ## 3. 当前优先级
 
-1. 基于已冻结 HTTP 输出推进 `MethodSelector v0`
+1. 知识库开发方案当前非模型调用部分已完成；后续如进入 DeepSeek Diagnosis，必须先显式接入模型调用边界并继续通过输出 validator
 2. 继续保持 `apps/api/app/page_evidence` 的冻结状态，仅接受回归修复和兼容性维护
 3. 如需接入其他抓取 provider 或继续做性能增强，必须保持已冻结公开 contract 不变
 
@@ -44,6 +44,8 @@
 已完成：
 
 - `POST /api/analyses` 已接入同步单 URL 分析闭环
+- `GET /api/analyses/{analysis_id}/methods` 已可只读返回 snapshot 中的 `RetrievedMethodPack`
+- `GET /api/analyses/{analysis_id}/strategy` 已可只读返回 snapshot 中的 `StrategyPlan`
 - 当前分析结果以文件快照持久化
 - 当前不依赖数据库落库
 
@@ -64,6 +66,28 @@
 - `apps/api/app/page_evidence/storage.py`
 - `apps/api/app/page_evidence/service.py`
 
+MethodSelector / Strategy 模块已实现目录：
+
+- `apps/api/app/methods/models.py`
+- `apps/api/app/methods/compiler.py`
+- `apps/api/app/methods/registry.py`
+- `apps/api/app/methods/selector.py`
+- `apps/api/app/methods/planner.py`
+- `apps/api/app/methods/data/geo_methods.seed.json`
+- `apps/api/app/methods/data/rule_method_bindings.seed.json`
+- `apps/api/app/methods/data/strategy_groups.seed.json`
+
+Safe Prompt 模块已实现目录：
+
+- `apps/api/app/safe_prompt/models.py`
+- `apps/api/app/safe_prompt/builder.py`
+- `apps/api/app/safe_prompt/validator.py`
+
+Diagnosis 输出校验模块已实现目录：
+
+- `apps/api/app/diagnosis/models.py`
+- `apps/api/app/diagnosis/validator.py`
+
 ### 4.3 当前能力
 
 已验证能力：
@@ -78,7 +102,13 @@
 - GEO-ready signals：已输出 `page_type_hint`、`primary_entity_candidates`、`content_outline`、`answer_unit_candidates`、`claim_candidates`、`evidence_candidates`、`statistics`、`structured_data_profile`、`boilerplate_metrics`、`safety_flags`
 - PageContentProfile v1 minimal read model：已可从 `PageEvidencePack` 构建 `page_type`、entity/outline/answer units、claim/evidence/statistics、schema/boilerplate、安全风险、`selection_readiness`、`absorption_readiness`、`content_gaps`
 - RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`；当前直接消费由 service 构建的 `PageContentProfile` readiness 信号
-- Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`analysis.json`
+- Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`retrieved_methods.json`、`strategy_plan.json`、`safe_prompt_pack.json`、`analysis.json`
+- Method Pack Compiler v0：已从 seed JSON 编译 `CompiledMethodPack`，覆盖 12 张方法卡、18 条当前 P0 RuleChecks binding 和 6 个 strategy group；compiler 对缺失 P0 rule binding、未知 method、未知 strategy group、缺 guardrails、缺 expected artifacts 执行 fail closed
+- MethodSelector v0：已基于完整内部 `PageContentProfile`、`RuleCheck.status/failure_type/evidence_refs` 和 compiled method pack 做 deterministic 选择；只消费 failed / warning 规则，输出 `RetrievedMethodPack`，包含 `selection_mode=deterministic_v0`、query rule 列表、matched rule/failure/evidence refs、strategy group、expected artifacts、guardrails、score 和 `why_selected`
+- Strategy Planner v0：已把 selected methods 按 strategy group rank 归组排序，安全组置顶，输出 `StrategyPlan` steps，并保留 method/rule/failure/evidence refs、expected artifacts 和 validator requirements
+- Methods / Strategy read-only API：已通过 `GET /api/analyses/{analysis_id}/methods` 和 `GET /api/analyses/{analysis_id}/strategy` 从 snapshot 读取已保存产物；接口不重新运行 selector / planner，不改变 base `AnalysisResponse`
+- Safe Prompt Pack v0：已生成 `safe_prompt_pack.json`，只包含结构化 facts、failed/warning rule checks、selected methods、strategy plan、带 `evidence_ref` 的短 excerpt 和 safety policy；validator 会拒绝包含 `<html`、`<script`、`<style`、`<!--` 的 excerpt，并校验 strategy step 引用的 method_ref 必须来自 selected methods
+- DeepSeek diagnosis output schema / validator：已定义 `DeepSeekDiagnosis` 输出结构，包括 score、issues、priority actions、asset drafts 和 unknowns；validator 要求 issue/action/asset draft 绑定已知 `evidence_ref` 与 `method_ref`，并拒绝把 unsupported claim 规则结果改写成 supported fact
 - Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试，并已覆盖 `rdfa`、`opengraph-only`、`navigation-heavy` 场景，以及 snapshot 落盘 / round-trip 回归
 - 新增中文产品页 fixture：`apps/api/tests/fixtures/html/cjk_product_page.html`，并已把 parser、geo_signals、rule_checks、service 的中文页行为固定为正式回归样本
 - 新增中文文档页与中文比较页 fixture：`apps/api/tests/fixtures/html/cjk_docs_howto_page.html`、`apps/api/tests/fixtures/html/cjk_comparison_page.html`，并已把 docs / comparison 场景的 parser、geo_signals、page_content_profile、rule_checks、service 行为固定为正式回归样本
@@ -123,6 +153,20 @@
 - `prompt_injection_risk`
 - `structured_data`
 
+当前 Method / Strategy contract：
+
+- `packages/contracts/schemas/method-pack.schema.json` 已与 `CompiledMethodPack` Pydantic model 对齐
+- `packages/contracts/schemas/retrieved-method-pack.schema.json` 已扩展为 deterministic v0 输出 schema，并保留原 required 字段 `retrieval_query`、`chunks`、`chunks[].method_ref`、`chunks[].title`、`chunks[].text`、`chunks[].why_selected`
+- `packages/contracts/schemas/strategy-plan.schema.json` 已与 `StrategyPlan` Pydantic model 对齐
+
+当前 Safe Prompt contract：
+
+- `packages/contracts/schemas/safe-prompt-pack.schema.json` 已与 `SafePromptPack` Pydantic model 对齐
+
+当前 Diagnosis contract：
+
+- `packages/contracts/schemas/deepseek-diagnosis.schema.json` 已与 `DeepSeekDiagnosis` Pydantic model 对齐
+
 ### 4.5 文档方法论基线
 
 已完成文档同步：
@@ -137,6 +181,8 @@
 - `docs/README.md` 已把该补充文档加入正式阅读入口。
 - `docs/后期开发/http层·遗漏.md` 已新增，用作记录 HTTP / Page Evidence 完整产品形态下的后期增强 backlog，不改变当前阶段优先级。
 - `docs/README.md` 已把该后期增强文档加入正式阅读入口。
+- `docs/模块开发补充/知识库架构技术开发方案.md` 已新增，用作知识库、Method Pack Compiler、MethodSelector、Strategy Planner 和后续 RAG/DeepSeek 接入边界的模块开发方案。
+- `docs/README.md` 已把该知识库架构补充文档加入正式阅读入口。
 
 当前文档口径：
 
@@ -147,19 +193,21 @@
 - `docs/模块开发补充/HTTP层GEO开发流程与完成标准.md` 已更新为当前执行顺序：先冻结 `PageEvidencePack / evidence_ref / fixtures`，再最小实现 `PageContentProfile` read model，最后冻结 `RuleChecks v1`。
 - HTTP 模块完成口径是 `PageEvidencePack v1 + GEO-ready signals + minimal public PageContentProfile subset + RuleChecks v1 + fixtures + snapshots`，不是接入 DeepSeek。
 - `docs/后期开发/http层·遗漏.md` 只记录后期迭代升级内容，不作为当前 MethodSelector v0 前置条件。
+- 知识库架构当前正式口径是 `Research KB -> Method Pack Compiler -> Runtime Method Selector -> Strategy Planner -> Safe Prompt Pack -> DeepSeek Diagnosis(后续) -> Validator`；当前已完成 deterministic `MethodSelector v0`、`Strategy Planner v0`、只读 Methods / Strategy API、Safe Prompt Pack v0 和 DeepSeek diagnosis 输出 validator，不把 RAGFlow / Dify / Qdrant / LlamaIndex / DeepSeek 作为前置依赖。
 
 ## 5. 当前边界
 
 当前仍未完成：
 
 - `PageContentProfile v1` 完整对象的全量对外字段口径最终冻结
-- 方法选择层
 - DeepSeek diagnosis 层
 
 当前实现边界：
 
 - 当前 `POST /api/analyses` 仍采用同步分析返回
 - 当前规则集与 `page_content_profile` 最小公开子集都已冻结为 HTTP 模块验收基线
+- 当前 `POST /api/analyses` / `GET /api/analyses/{analysis_id}` 公开响应仍不返回 methods 或 strategy；methods / strategy 仅通过独立只读接口读取 snapshot 产物
+- 当前 `safe_prompt_pack.json` 仅作为后续模型输入的安全快照产物保存；当前仍不调用 DeepSeek
 - 后续可在不打破 `PageEvidencePack v1 + minimal public PageContentProfile subset + RuleChecks v1` contract 的前提下替换抓取实现、增加 provider 或继续做性能增强
 - 当前 structured data 粒度和部分 heuristic 阈值仍可能在样本验证后调整
 - 当前仍以静态 HTML 抓取为主，不默认启用浏览器渲染或外部抓取 provider
@@ -171,12 +219,16 @@
 - `python -m pytest apps/api/tests`
 - `python -m compileall apps/api/app apps/api/tests`
 
+最新文档验证命令：
+
+- `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\知识库架构技术开发方案.md'`
+- `rg -n "知识库架构技术开发方案|Method Pack Compiler|Runtime Method Selector|RAGFlow|Qdrant|DeepSeek Diagnosis\(后续\)" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\知识库架构技术开发方案.md'`
+
 最新验证结果：
 
-- `pytest`：45 passed
-- `pytest`：47 passed
-- `pytest`：48 passed
+- `pytest`：63 passed
 - `compileall`：通过
+- 文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/知识库架构技术开发方案.md` 均包含本轮新增知识库方案入口或核心 Method Pack 架构口径
 
 当前测试已覆盖：
 
@@ -195,6 +247,9 @@
 - comparison table / docs how-to procedure / thin content / multi-H1 bad structure
 - RDFa article / OpenGraph-only landing / navigation-heavy low-content
 - snapshot `evidence.json` / `page_content_profile.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
+- snapshot `retrieved_methods.json` / `strategy_plan.json` 落盘，且未进入公开 `AnalysisResponse`
+- snapshot `safe_prompt_pack.json` 落盘，且不包含 raw HTML、完整 clean markdown、HTML comments、script/style 内容
+- `GET /api/analyses/{analysis_id}/methods` / `GET /api/analyses/{analysis_id}/strategy` 成功返回已保存 snapshot 产物，缺失时返回 404
 - `PageContentProfile` article/home/injection 风险构建测试
 - `RuleChecks` readiness 规则：`selection.readiness_low`、`absorption.readiness_low`
 - readiness 阈值冻结测试：article strong / product mixed / docs mixed / comparison weak / navigation weak
@@ -204,6 +259,14 @@
 - `RuleChecks v1` P0 冻结矩阵：18 条规则均具备 pass 与 warning/failed 双侧样本覆盖
 - 抓取层性能回归：URL public validation 在单次分析内可被复用，辅助资源抓取改为 bundle 并发路径，超大 `Content-Length` 响应会在读 body 前失败
 - failed / warning `RuleChecks` 的 `evidence_refs` 可解析到 `PageEvidencePack` 或 `PageContentProfile`
+- Method Pack compiler 覆盖当前 18 条 P0 rule binding，并对缺失 P0 binding fail closed
+- MethodSelector v0 只选择 failed / warning rule，输出 deterministic `why_selected`、matched rule/failure/evidence refs，并在 prompt injection 样本中把 safety method 置顶
+- Strategy Planner v0 按 strategy group rank 稳定排序，合并同组 methods，并为每个 step 输出 validator requirements
+- `CompiledMethodPack`、`RetrievedMethodPack`、`StrategyPlan` schema 文件与 Pydantic model 对齐
+- Safe Prompt Pack v0 只包含安全结构化输入、带 `evidence_ref` 的短 excerpt 和 safety policy；unsafe markup excerpt 会被 validator 拒绝
+- `SafePromptPack` schema 文件与 Pydantic model 对齐
+- DeepSeek diagnosis output validator 会拒绝未知 method_ref / evidence_ref，拒绝 unsupported claim 被标记为 supported fact，并校验 action 引用的 issue_id 必须存在
+- `DeepSeekDiagnosis` schema 文件与 Pydantic model 对齐
 
 已知验证噪声：
 
@@ -216,6 +279,8 @@
 当前风险：
 
 - 最小稳定公开子集已冻结，但完整 `PageContentProfile` 仍属内部对象；后续如需公开更多字段，应使用新增字段或版本化方式，避免破坏当前 contract
+- 当前 DeepSeek diagnosis 输出 schema / validator 已完成，但尚未接入 DeepSeek 模型调用；后续如接入模型，必须只消费 `safe_prompt_pack.json`，并让模型输出通过 diagnosis validator
+- 当前方法卡为 v0 seed，覆盖当前 P0 rule mapping；后续新增规则或方法时必须继续通过 compiler coverage 测试
 - 抓取层虽已完成一次性能优化，但当前仍缺浏览器渲染 fallback、重复分析结果缓存和更真实中文站点压力样本
 - 中文页面的产品页 / 文档页 / 比较页已进入正式 fixture 回归，但更真实的中文站点 HTML 仍不足
 - 当前真实 excerpt 已覆盖 Shopify / Ahrefs / Moz，但品牌与行业分布仍偏窄，且仍缺稳定可抓取的第二个真实产品型品牌域
@@ -225,7 +290,7 @@
 
 下一阶段只做以下工作：
 
-1. 基于已冻结 `page_type`、`failure_type`、readiness 信号推进 `MethodSelector v0`
+1. 如需进入 DeepSeek Diagnosis，实现模型调用边界时只能消费 `safe_prompt_pack.json`，且输出必须通过 `DeepSeekDiagnosis` schema / validator
 2. 继续维持 `apps/api/app/page_evidence` 冻结，只接受回归修复、兼容性维护和不破坏 contract 的实现增强
 3. 在有真实样本证据时，再评估浏览器渲染 fallback、外部抓取 provider 或进一步性能优化
 

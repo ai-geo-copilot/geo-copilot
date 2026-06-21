@@ -1,0 +1,101 @@
+{
+  "$defs": {
+    "StrategyStep": {
+      "properties": {
+        "step_id": {
+          "title": "Step Id",
+          "type": "string"
+        },
+        "strategy_group": {
+          "title": "Strategy Group",
+          "type": "string"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "method_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Method Refs",
+          "type": "array"
+        },
+        "rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Rule Ids",
+          "type": "array"
+        },
+        "failure_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Types",
+          "type": "array"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "why_now": {
+          "title": "Why Now",
+          "type": "string"
+        },
+        "expected_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Artifacts",
+          "type": "array"
+        },
+        "validator_requirements": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Validator Requirements",
+          "type": "array"
+        }
+      },
+      "required": [
+        "step_id",
+        "strategy_group",
+        "rank",
+        "method_refs",
+        "why_now"
+      ],
+      "title": "StrategyStep",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "plan_version": {
+      "default": "strategy-plan-v0",
+      "title": "Plan Version",
+      "type": "string"
+    },
+    "planner_version": {
+      "default": "strategy-planner-v0",
+      "title": "Planner Version",
+      "type": "string"
+    },
+    "strategy_steps": {
+      "items": {
+        "$ref": "#/$defs/StrategyStep"
+      },
+      "title": "Strategy Steps",
+      "type": "array"
+    }
+  },
+  "required": [
+    "strategy_steps"
+  ],
+  "title": "StrategyPlan",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/strategy-plan.schema.json"
+}

@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 from uuid import UUID
 
+from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
+from apps.api.app.safe_prompt.models import SafePromptPack
+
 from .models import AnalysisResult, PageContentProfile, PageEvidencePack, RuleCheck
 
 
@@ -23,6 +26,9 @@ class SnapshotStorage:
         profile: PageContentProfile,
         rule_checks: list[RuleCheck],
         result: AnalysisResult,
+        retrieved_methods: RetrievedMethodPack | None = None,
+        strategy_plan: StrategyPlan | None = None,
+        safe_prompt_pack: SafePromptPack | None = None,
     ) -> str:
         snapshot_dir = self.get_snapshot_dir(analysis_id)
         snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -40,6 +46,21 @@ class SnapshotStorage:
             json.dumps([item.model_dump(mode="json") for item in rule_checks], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        if retrieved_methods is not None:
+            (snapshot_dir / "retrieved_methods.json").write_text(
+                json.dumps(retrieved_methods.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if strategy_plan is not None:
+            (snapshot_dir / "strategy_plan.json").write_text(
+                json.dumps(strategy_plan.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        if safe_prompt_pack is not None:
+            (snapshot_dir / "safe_prompt_pack.json").write_text(
+                json.dumps(safe_prompt_pack.model_dump(mode="json"), ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
         (snapshot_dir / "analysis.json").write_text(
             result.model_dump_json(indent=2),
             encoding="utf-8",
@@ -52,3 +73,21 @@ class SnapshotStorage:
         if not analysis_file.exists():
             return None
         return AnalysisResult.model_validate_json(analysis_file.read_text(encoding="utf-8"))
+
+    def load_retrieved_methods(self, analysis_id: UUID) -> RetrievedMethodPack | None:
+        methods_file = self._root_dir / str(analysis_id) / "retrieved_methods.json"
+        if not methods_file.exists():
+            return None
+        return RetrievedMethodPack.model_validate_json(methods_file.read_text(encoding="utf-8"))
+
+    def load_strategy_plan(self, analysis_id: UUID) -> StrategyPlan | None:
+        strategy_file = self._root_dir / str(analysis_id) / "strategy_plan.json"
+        if not strategy_file.exists():
+            return None
+        return StrategyPlan.model_validate_json(strategy_file.read_text(encoding="utf-8"))
+
+    def load_safe_prompt_pack(self, analysis_id: UUID) -> SafePromptPack | None:
+        safe_prompt_file = self._root_dir / str(analysis_id) / "safe_prompt_pack.json"
+        if not safe_prompt_file.exists():
+            return None
+        return SafePromptPack.model_validate_json(safe_prompt_file.read_text(encoding="utf-8"))

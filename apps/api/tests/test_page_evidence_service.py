@@ -80,6 +80,9 @@ def test_page_evidence_service_builds_snapshot_and_rule_checks(tmp_path: Path) -
     assert Path(result.snapshot_dir or "").exists()
     assert (Path(result.snapshot_dir or "") / "raw.html").exists()
     assert (Path(result.snapshot_dir or "") / "page_content_profile.json").exists()
+    assert (Path(result.snapshot_dir or "") / "retrieved_methods.json").exists()
+    assert (Path(result.snapshot_dir or "") / "strategy_plan.json").exists()
+    assert (Path(result.snapshot_dir or "") / "safe_prompt_pack.json").exists()
     assert (Path(result.snapshot_dir or "") / "analysis.json").exists()
     assert result.page_evidence.crawl_access.robots_txt.status == "missing"
 
@@ -316,6 +319,9 @@ def test_page_evidence_service_snapshot_persists_evidence_and_rule_outputs(tmp_p
     profile_payload = json.loads((snapshot_dir / "page_content_profile.json").read_text(encoding="utf-8"))
     rule_payload = json.loads((snapshot_dir / "rule_checks.json").read_text(encoding="utf-8"))
     analysis_payload = json.loads((snapshot_dir / "analysis.json").read_text(encoding="utf-8"))
+    retrieved_methods_payload = json.loads((snapshot_dir / "retrieved_methods.json").read_text(encoding="utf-8"))
+    strategy_plan_payload = json.loads((snapshot_dir / "strategy_plan.json").read_text(encoding="utf-8"))
+    safe_prompt_payload = json.loads((snapshot_dir / "safe_prompt_pack.json").read_text(encoding="utf-8"))
 
     assert evidence_payload["geo_signals"]["page_type_hint"] == "landing"
     assert profile_payload["page_type"] == "landing"
@@ -325,6 +331,12 @@ def test_page_evidence_service_snapshot_persists_evidence_and_rule_outputs(tmp_p
     assert evidence_payload["geo_signals"]["primary_entity_candidates"][0]["evidence_ref"] == "geo_signals.primary_entity_candidates[0]"
     assert analysis_payload["page_evidence"]["storage"]["snapshot_dir"] == str(snapshot_dir)
     assert analysis_payload["page_content_profile"]["page_type"] == "landing"
+    assert "retrieved_methods" not in analysis_payload
+    assert "strategy_plan" not in analysis_payload
+    assert retrieved_methods_payload["selection_mode"] == "deterministic_v0"
+    assert strategy_plan_payload["strategy_steps"]
+    assert safe_prompt_payload["pack_version"] == "safe-prompt-pack-v0"
+    assert "raw_html" in safe_prompt_payload["safety_policy"]["forbidden_inputs"]
     assert any(
         item["rule_id"] == "schema.structured_data_missing"
         and item["status"] == "passed"
@@ -350,8 +362,14 @@ def test_snapshot_storage_load_result_round_trips_analysis(tmp_path: Path) -> No
 
     result = service.analyze("https://example.com", "zh-CN")
     reloaded = storage.load_result(result.id)
+    reloaded_methods = storage.load_retrieved_methods(result.id)
+    reloaded_strategy = storage.load_strategy_plan(result.id)
+    reloaded_safe_prompt = storage.load_safe_prompt_pack(result.id)
 
     assert reloaded is not None
+    assert reloaded_methods is not None
+    assert reloaded_strategy is not None
+    assert reloaded_safe_prompt is not None
     assert reloaded.id == result.id
     assert reloaded.page_evidence is not None
     assert reloaded.page_content_profile is not None
@@ -359,3 +377,6 @@ def test_snapshot_storage_load_result_round_trips_analysis(tmp_path: Path) -> No
     assert reloaded.page_evidence.geo_signals.page_type_hint == "article"
     assert reloaded.page_evidence.structured_data.rdfa
     assert reloaded.rule_checks == result.rule_checks
+    assert reloaded_methods.selection_mode == "deterministic_v0"
+    assert reloaded_strategy.strategy_steps
+    assert reloaded_safe_prompt.pack_version == "safe-prompt-pack-v0"

@@ -1,7 +1,7 @@
 # GEO 项目文档入口
 
 状态：active  
-最后更新：2026-06-21
+最后更新：2026-06-22
 
 本文件只负责：
 
@@ -23,7 +23,8 @@
 5. `GEO五人团队分工协作与验收标准.md`
 6. `GEO论文优化方法知识库.md`
 7. `模块开发补充/HTTP层GEO开发流程与完成标准.md`
-8. `后期开发/http层·遗漏.md`
+8. `模块开发补充/知识库架构技术开发方案.md`
+9. `后期开发/http层·遗漏.md`
 
 ## 统一 GEO 方法论基线
 
@@ -48,6 +49,7 @@
 - `GEO五人团队分工协作与验收标准.md`：围绕 GEO 模块链路的协作流程与验收规则
 - `GEO论文优化方法知识库.md`：GEO 方法来源、证据等级与种子卡片依据
 - `模块开发补充/HTTP层GEO开发流程与完成标准.md`：HTTP / Page Evidence 模块的具体开发流程、字段补强、RuleChecks v1 和验收标准
+- `模块开发补充/知识库架构技术开发方案.md`：知识库、Method Pack Compiler、MethodSelector、Strategy Planner 和后续 RAG/DeepSeek 接入边界
 - `后期开发/http层·遗漏.md`：HTTP / Page Evidence 在完整产品形态下的后期增强 backlog，不改变当前阶段优先级
 
 ## 非事实源

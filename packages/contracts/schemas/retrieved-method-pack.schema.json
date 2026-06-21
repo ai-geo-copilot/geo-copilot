@@ -1,23 +1,156 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://geo-copilot.local/schemas/retrieved-method-pack.schema.json",
+  "$defs": {
+    "RetrievalQuery": {
+      "properties": {
+        "page_type": {
+          "enum": [
+            "article",
+            "product",
+            "docs",
+            "landing",
+            "comparison",
+            "home",
+            "unknown"
+          ],
+          "title": "Page Type",
+          "type": "string"
+        },
+        "failed_rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failed Rule Ids",
+          "type": "array"
+        },
+        "warning_rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warning Rule Ids",
+          "type": "array"
+        },
+        "failure_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Failure Types",
+          "type": "array"
+        }
+      },
+      "required": [
+        "page_type"
+      ],
+      "title": "RetrievalQuery",
+      "type": "object"
+    },
+    "RetrievedMethodChunk": {
+      "properties": {
+        "method_ref": {
+          "title": "Method Ref",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "why_selected": {
+          "title": "Why Selected",
+          "type": "string"
+        },
+        "matched_rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matched Rule Ids",
+          "type": "array"
+        },
+        "matched_failure_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matched Failure Types",
+          "type": "array"
+        },
+        "matched_evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Matched Evidence Refs",
+          "type": "array"
+        },
+        "strategy_group": {
+          "title": "Strategy Group",
+          "type": "string"
+        },
+        "expected_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Artifacts",
+          "type": "array"
+        },
+        "guardrails": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Guardrails",
+          "type": "array"
+        },
+        "score": {
+          "title": "Score",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "method_ref",
+        "title",
+        "text",
+        "why_selected",
+        "strategy_group",
+        "score"
+      ],
+      "title": "RetrievedMethodChunk",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "pack_version": {
+      "default": "retrieved-method-pack-v0",
+      "title": "Pack Version",
+      "type": "string"
+    },
+    "compiled_method_pack_version": {
+      "title": "Compiled Method Pack Version",
+      "type": "string"
+    },
+    "selection_mode": {
+      "const": "deterministic_v0",
+      "default": "deterministic_v0",
+      "title": "Selection Mode",
+      "type": "string"
+    },
+    "retrieval_query": {
+      "$ref": "#/$defs/RetrievalQuery"
+    },
+    "chunks": {
+      "items": {
+        "$ref": "#/$defs/RetrievedMethodChunk"
+      },
+      "title": "Chunks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "compiled_method_pack_version",
+    "retrieval_query",
+    "chunks"
+  ],
   "title": "RetrievedMethodPack",
   "type": "object",
-  "required": ["retrieval_query", "chunks"],
-  "properties": {
-    "retrieval_query": { "type": "object" },
-    "chunks": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "required": ["method_ref", "title", "text", "why_selected"],
-        "properties": {
-          "method_ref": { "type": "string" },
-          "title": { "type": "string" },
-          "text": { "type": "string" },
-          "why_selected": { "type": "string" }
-        }
-      }
-    }
-  }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/retrieved-method-pack.schema.json"
 }

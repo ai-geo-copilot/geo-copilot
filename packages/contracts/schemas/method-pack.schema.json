@@ -1,0 +1,267 @@
+{
+  "$defs": {
+    "MethodChunk": {
+      "properties": {
+        "method_ref": {
+          "title": "Method Ref",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "P0",
+            "P1",
+            "P2"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "strategy_group": {
+          "title": "Strategy Group",
+          "type": "string"
+        },
+        "applies_to_page_types": {
+          "items": {
+            "enum": [
+              "article",
+              "product",
+              "docs",
+              "landing",
+              "comparison",
+              "home",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "title": "Applies To Page Types",
+          "type": "array"
+        },
+        "applies_to_rule_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Applies To Rule Ids",
+          "type": "array"
+        },
+        "applies_to_failure_types": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Applies To Failure Types",
+          "type": "array"
+        },
+        "uses_profile_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Uses Profile Fields",
+          "type": "array"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "action_steps": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Action Steps",
+          "type": "array"
+        },
+        "expected_artifacts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Expected Artifacts",
+          "type": "array"
+        },
+        "guardrails": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Guardrails",
+          "type": "array"
+        },
+        "evidence_source_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidence Source Refs",
+          "type": "array"
+        },
+        "version": {
+          "default": "1.0.0",
+          "title": "Version",
+          "type": "string"
+        },
+        "deprecated": {
+          "default": false,
+          "title": "Deprecated",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "method_ref",
+        "title",
+        "priority",
+        "strategy_group",
+        "applies_to_page_types",
+        "text",
+        "action_steps",
+        "expected_artifacts",
+        "guardrails"
+      ],
+      "title": "MethodChunk",
+      "type": "object"
+    },
+    "RuleMethodBinding": {
+      "properties": {
+        "rule_id": {
+          "title": "Rule Id",
+          "type": "string"
+        },
+        "failure_type": {
+          "title": "Failure Type",
+          "type": "string"
+        },
+        "default_methods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Default Methods",
+          "type": "array"
+        },
+        "fallback_methods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fallback Methods",
+          "type": "array"
+        },
+        "required_strategy_group": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Strategy Group"
+        },
+        "severity_override": {
+          "additionalProperties": {
+            "enum": [
+              "P0",
+              "P1",
+              "P2"
+            ],
+            "type": "string"
+          },
+          "title": "Severity Override",
+          "type": "object"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "rule_id",
+        "failure_type",
+        "default_methods"
+      ],
+      "title": "RuleMethodBinding",
+      "type": "object"
+    },
+    "StrategyGroup": {
+      "properties": {
+        "strategy_group": {
+          "title": "Strategy Group",
+          "type": "string"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy_group",
+        "rank",
+        "description"
+      ],
+      "title": "StrategyGroup",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "pack_version": {
+      "default": "method-pack-v0",
+      "title": "Pack Version",
+      "type": "string"
+    },
+    "compiler_version": {
+      "default": "method-compiler-v0",
+      "title": "Compiler Version",
+      "type": "string"
+    },
+    "source_hash": {
+      "title": "Source Hash",
+      "type": "string"
+    },
+    "methods": {
+      "items": {
+        "$ref": "#/$defs/MethodChunk"
+      },
+      "title": "Methods",
+      "type": "array"
+    },
+    "bindings": {
+      "items": {
+        "$ref": "#/$defs/RuleMethodBinding"
+      },
+      "title": "Bindings",
+      "type": "array"
+    },
+    "strategy_groups": {
+      "items": {
+        "$ref": "#/$defs/StrategyGroup"
+      },
+      "title": "Strategy Groups",
+      "type": "array"
+    },
+    "compiler_warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Compiler Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_hash",
+    "methods",
+    "bindings",
+    "strategy_groups"
+  ],
+  "title": "CompiledMethodPack",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geo-copilot.local/schemas/method-pack.schema.json"
+}

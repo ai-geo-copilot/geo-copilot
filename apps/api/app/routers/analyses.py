@@ -3,7 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, HttpUrl
 
-from ..page_evidence import PageEvidenceService
+from ..methods.models import RetrievedMethodPack, StrategyPlan
+from ..page_evidence.service import PageEvidenceService
 from ..page_evidence.models import AnalysisResult, PageEvidencePack, PublicPageContentProfile, RuleCheck
 from ..page_evidence.page_content_profile import build_public_page_content_profile
 
@@ -78,6 +79,28 @@ def get_analysis(
     if result is None:
         raise HTTPException(status_code=404, detail="analysis not found")
     return _to_response(result)
+
+
+@router.get("/{analysis_id}/methods", response_model=RetrievedMethodPack)
+def get_analysis_methods(
+    analysis_id: UUID,
+    service: PageEvidenceService = Depends(get_analysis_service),
+) -> RetrievedMethodPack:
+    retrieved_methods = service.get_retrieved_methods(analysis_id)
+    if retrieved_methods is None:
+        raise HTTPException(status_code=404, detail="analysis methods not found")
+    return retrieved_methods
+
+
+@router.get("/{analysis_id}/strategy", response_model=StrategyPlan)
+def get_analysis_strategy(
+    analysis_id: UUID,
+    service: PageEvidenceService = Depends(get_analysis_service),
+) -> StrategyPlan:
+    strategy_plan = service.get_strategy_plan(analysis_id)
+    if strategy_plan is None:
+        raise HTTPException(status_code=404, detail="analysis strategy not found")
+    return strategy_plan
 
 
 @router.post("/{analysis_id}/messages", response_model=FollowUpResponse)

@@ -4,6 +4,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apps.api.app.main import app
+from apps.api.app.methods.models import (
+    RetrievedMethodChunk,
+    RetrievedMethodPack,
+    RetrievalQuery,
+    StrategyPlan,
+    StrategyStep,
+)
 from apps.api.app.page_evidence.models import (
     AnalysisResult,
     CrawlAccessEvidence,
@@ -140,6 +147,54 @@ class _StubService:
     def get_result(self, analysis_id):
         return self.analyze_safe("https://example.com/", "zh-CN")
 
+    def get_retrieved_methods(self, analysis_id):
+        if str(analysis_id) == "22222222-2222-2222-2222-222222222222":
+            return None
+        return RetrievedMethodPack(
+            compiled_method_pack_version="method-pack-v0",
+            retrieval_query=RetrievalQuery(
+                page_type="article",
+                failed_rule_ids=["content.definition_unit_missing"],
+                warning_rule_ids=[],
+                failure_types=["absorption_blocker"],
+            ),
+            chunks=[
+                RetrievedMethodChunk(
+                    method_ref="chunk_geo_definition_unit_001",
+                    title="Definition Unit Construction",
+                    text="Add a concise visible definition or summary unit near the top of the page.",
+                    why_selected="Selected because content.definition_unit_missing failed.",
+                    matched_rule_ids=["content.definition_unit_missing"],
+                    matched_failure_types=["absorption_blocker"],
+                    matched_evidence_refs=["geo_signals.page_type_hint"],
+                    strategy_group="absorption_foundation",
+                    expected_artifacts=["definition_block"],
+                    guardrails=["Do not invent product capabilities."],
+                    score=155,
+                )
+            ],
+        )
+
+    def get_strategy_plan(self, analysis_id):
+        if str(analysis_id) == "22222222-2222-2222-2222-222222222222":
+            return None
+        return StrategyPlan(
+            strategy_steps=[
+                StrategyStep(
+                    step_id="strategy_step_001",
+                    strategy_group="absorption_foundation",
+                    rank=40,
+                    method_refs=["chunk_geo_definition_unit_001"],
+                    rule_ids=["content.definition_unit_missing"],
+                    failure_types=["absorption_blocker"],
+                    evidence_refs=["geo_signals.page_type_hint"],
+                    why_now="absorption_foundation is prioritized for page_type=article.",
+                    expected_artifacts=["definition_block"],
+                    validator_requirements=["Every recommendation must include evidence_refs and method_refs."],
+                )
+            ]
+        )
+
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
@@ -195,3 +250,34 @@ def test_get_analysis_returns_minimal_public_page_content_profile(client: TestCl
     assert body["page_content_profile"]["absorption_readiness"]["score"] == 0.7
     assert "content_gaps" not in body["page_content_profile"]
     assert "answer_units" not in body["page_content_profile"]
+
+
+def test_get_analysis_methods_returns_retrieved_method_pack(client: TestClient) -> None:
+    response = client.get("/api/analyses/11111111-1111-1111-1111-111111111111/methods")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["selection_mode"] == "deterministic_v0"
+    assert body["retrieval_query"]["page_type"] == "article"
+    assert body["chunks"][0]["method_ref"] == "chunk_geo_definition_unit_001"
+    assert body["chunks"][0]["matched_rule_ids"] == ["content.definition_unit_missing"]
+
+
+def test_get_analysis_strategy_returns_strategy_plan(client: TestClient) -> None:
+    response = client.get("/api/analyses/11111111-1111-1111-1111-111111111111/strategy")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["plan_version"] == "strategy-plan-v0"
+    assert body["strategy_steps"][0]["strategy_group"] == "absorption_foundation"
+    assert body["strategy_steps"][0]["method_refs"] == ["chunk_geo_definition_unit_001"]
+
+
+def test_get_analysis_methods_and_strategy_return_404_when_snapshot_missing(client: TestClient) -> None:
+    missing_id = "22222222-2222-2222-2222-222222222222"
+
+    methods_response = client.get(f"/api/analyses/{missing_id}/methods")
+    strategy_response = client.get(f"/api/analyses/{missing_id}/strategy")
+
+    assert methods_response.status_code == 404
+    assert strategy_response.status_code == 404
