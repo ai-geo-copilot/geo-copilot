@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback } from "react";
+import { useGeoCopilot } from "../hooks/use-geo-copilot";
 import { Nav } from "../components/landing/nav";
 import { Hero } from "../components/landing/hero";
 import { ValueSection } from "../components/landing/value-section";
@@ -11,16 +12,23 @@ import { WorkflowSection } from "../components/landing/workflow-section";
 import { InsightsSection } from "../components/landing/insights-section";
 import { FAQSection } from "../components/landing/faq-section";
 import { CtaSection } from "../components/landing/cta-section";
-import { AnalysisSection } from "../components/analysis/analysis-section";
+import { LiveAnalysisSection } from "../components/analysis/live-analysis-section";
 
 export default function Home() {
-  const [analysisUrl, setAnalysisUrl] = useState<string | null>(null);
+  const { state, actions } = useGeoCopilot();
+
+  const handleAnalyze = useCallback(
+    (url: string) => {
+      actions.submitUrlAnalysis({ url, language: "zh-CN" });
+    },
+    [actions],
+  );
 
   return (
     <>
       <Nav />
       <main>
-        <Hero onAnalyze={setAnalysisUrl} />
+        <Hero onAnalyze={handleAnalyze} />
         <ValueSection />
         <div className="section-divider" />
         <CapabilitiesSection />
@@ -30,7 +38,7 @@ export default function Home() {
         <WorkflowSection />
         <InsightsSection />
         <FAQSection />
-        <AnalysisSection url={analysisUrl} />
+        <LiveAnalysisSection state={state} actions={actions} />
         <CtaSection />
       </main>
     </>
