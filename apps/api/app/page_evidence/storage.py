@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from uuid import UUID
 
+from apps.api.app.conversations.models import (
+    ConversationHistory,
+    ConversationMessage,
+    ConversationMessageRequest,
+    CopilotTurn,
+)
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
 from apps.api.app.diagnosis.models import DeepSeekDiagnosis
 from apps.api.app.page_input.models import PageInputContext
@@ -133,3 +140,67 @@ class SnapshotStorage:
         if not diagnosis_file.exists():
             return None
         return DeepSeekDiagnosis.model_validate_json(diagnosis_file.read_text(encoding="utf-8"))
+
+    def save_copilot_turn(
+        self,
+        analysis_id: UUID,
+        request: ConversationMessageRequest,
+        turn: CopilotTurn,
+        metadata: dict[str, object],
+    ) -> None:
+        conversation_dir = self.get_snapshot_dir(analysis_id) / "conversations" / "default"
+        turns_dir = conversation_dir / "turns"
+        turns_dir.mkdir(parents=True, exist_ok=True)
+        turn_number = self._next_turn_number(turns_dir)
+        user_payload = {
+            "role": "user",
+            "content": request.message,
+            "turn_user_context": (
+                None if request.turn_user_context is None else request.turn_user_context.model_dump(mode="json")
+            ),
+            "intent": request.intent,
+        }
+        self._atomic_write_json(turns_dir / f"{turn_number:06d}_user.json", user_payload)
+        self._atomic_write_json(turns_dir / f"{turn_number:06d}_assistant.json", turn.model_dump(mode="json"))
+        self._atomic_write_json(turns_dir / f"{turn_number:06d}_assistant.meta.json", metadata)
+        self._atomic_write_json(
+            conversation_dir / "conversation.json",
+            {
+                "analysis_id": str(analysis_id),
+                "conversation_id": "default",
+                "turn_count": turn_number,
+                "updated_at": metadata.get("created_at"),
+            },
+        )
+
+    def load_conversation_history(self, analysis_id: UUID) -> ConversationHistory:
+        turns_dir = self.get_snapshot_dir(analysis_id) / "conversations" / "default" / "turns"
+        if not turns_dir.exists():
+            return ConversationHistory(analysis_id=analysis_id)
+        messages: list[ConversationMessage] = []
+        turns: list[CopilotTurn] = []
+        for path in sorted(turns_dir.glob("*_user.json")):
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            content = payload.get("content")
+            if isinstance(content, str):
+                messages.append(ConversationMessage(role="user", content=content))
+            assistant_path = path.with_name(path.name.replace("_user.json", "_assistant.json"))
+            if assistant_path.exists():
+                turn = CopilotTurn.model_validate_json(assistant_path.read_text(encoding="utf-8"))
+                turns.append(turn)
+                messages.append(ConversationMessage(role="assistant", content=turn.answer))
+        return ConversationHistory(analysis_id=analysis_id, messages=messages, turns=turns)
+
+    def _next_turn_number(self, turns_dir: Path) -> int:
+        existing = []
+        for path in turns_dir.glob("*_assistant.json"):
+            try:
+                existing.append(int(path.name.split("_", 1)[0]))
+            except ValueError:
+                continue
+        return max(existing, default=0) + 1
+
+    def _atomic_write_json(self, path: Path, payload: dict[str, object]) -> None:
+        temp_path = path.with_suffix(path.suffix + ".tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temp_path, path)

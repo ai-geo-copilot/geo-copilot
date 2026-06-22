@@ -6,6 +6,8 @@ from pathlib import PurePath
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, HttpUrl
 
+from ..conversations.models import ConversationHistory, ConversationMessageRequest, CopilotTurn
+from ..conversations.service import ConversationService, ConversationServiceError
 from ..diagnosis.models import DeepSeekDiagnosis
 from ..diagnosis.service import DiagnosisService, DiagnosisServiceError
 from ..llm.errors import DeepSeekAuthError, DeepSeekBillingError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
@@ -34,6 +36,10 @@ def get_diagnosis_service(request: Request) -> DiagnosisService:
     return request.app.state.diagnosis_service
 
 
+def get_conversation_service(request: Request) -> ConversationService:
+    return request.app.state.conversation_service
+
+
 class AnalysisCreateRequest(BaseModel):
     url: HttpUrl
     language: str = Field(default="zh-CN", min_length=2, max_length=16)
@@ -51,17 +57,6 @@ class AnalysisResponse(BaseModel):
     page_content_profile: PublicPageContentProfile | None = None
     rule_checks: list[RuleCheck] = Field(default_factory=list)
     snapshot_dir: str | None = None
-
-
-class FollowUpRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=4000)
-
-
-class FollowUpResponse(BaseModel):
-    analysis_id: UUID
-    status: str
-    answer: str | None = None
-    error_code: str | None = None
 
 
 def _to_response(result: AnalysisResult) -> AnalysisResponse:
@@ -229,12 +224,32 @@ def get_analysis_diagnosis(
     return diagnosis
 
 
-@router.post("/{analysis_id}/messages", response_model=FollowUpResponse)
-def create_follow_up(analysis_id: UUID, payload: FollowUpRequest) -> FollowUpResponse:
-    if not payload.message.strip():
-        raise HTTPException(status_code=422, detail="message cannot be blank")
-    return FollowUpResponse(
-        analysis_id=analysis_id,
-        status="failed",
-        error_code="analysis_not_ready",
-    )
+@router.post("/{analysis_id}/messages", response_model=CopilotTurn)
+def create_follow_up(
+    analysis_id: UUID,
+    payload: ConversationMessageRequest,
+    service: ConversationService = Depends(get_conversation_service),
+) -> CopilotTurn:
+    try:
+        return service.create_turn(analysis_id, payload)
+    except ConversationServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except DeepSeekAuthError as exc:
+        raise HTTPException(status_code=502, detail="copilot provider auth failed") from exc
+    except DeepSeekBillingError as exc:
+        raise HTTPException(status_code=502, detail="copilot provider billing unavailable") from exc
+    except DeepSeekInvalidResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except DeepSeekUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/{analysis_id}/messages", response_model=ConversationHistory)
+def get_follow_ups(
+    analysis_id: UUID,
+    service: ConversationService = Depends(get_conversation_service),
+) -> ConversationHistory:
+    try:
+        return service.get_history(analysis_id)
+    except ConversationServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc

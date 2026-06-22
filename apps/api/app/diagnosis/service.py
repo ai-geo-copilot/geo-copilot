@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -9,6 +7,7 @@ from pydantic import ValidationError
 
 from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult
 from apps.api.app.llm.errors import DeepSeekInvalidResponseError
+from apps.api.app.llm.settings import DeepSeekSettings
 from apps.api.app.page_evidence.storage import SnapshotStorage
 from apps.api.app.safe_prompt.validator import validate_safe_prompt_pack
 
@@ -21,27 +20,6 @@ class DiagnosisServiceError(RuntimeError):
     def __init__(self, message: str, *, status_code: int) -> None:
         super().__init__(message)
         self.status_code = status_code
-
-
-@dataclass(frozen=True)
-class DeepSeekSettings:
-    api_key: str
-    base_url: str = "https://api.deepseek.com"
-    model: str = "deepseek-v4-flash"
-    timeout_seconds: float = 60.0
-    max_retries: int = 2
-    max_tokens: int = 4096
-
-    @classmethod
-    def from_env(cls) -> "DeepSeekSettings":
-        return cls(
-            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-            timeout_seconds=float(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60")),
-            max_retries=int(os.environ.get("DEEPSEEK_MAX_RETRIES", "2")),
-            max_tokens=int(os.environ.get("DEEPSEEK_MAX_TOKENS", "4096")),
-        )
 
 
 class DiagnosisService:
