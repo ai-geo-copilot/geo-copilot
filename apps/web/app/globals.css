@@ -406,3 +406,288 @@ dd {
     min-height: 260px;
   }
 }
+
+/* ── Analysis Status Bar ── */
+.analysis-status-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.status-item {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.status-item span:first-child {
+  color: var(--muted);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-badge.completed {
+  background: #ecfdf3;
+  color: var(--success);
+}
+
+.status-badge.failed {
+  background: #fef3f2;
+  color: var(--danger);
+}
+
+/* ── Mobile Tab Bar ── */
+.mobile-tab-bar {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .mobile-tab-bar {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    background: #eef1f5;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .mobile-tab-bar button {
+    flex: 1;
+    min-height: 36px;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 6px;
+    font-weight: 600;
+  }
+
+  .mobile-tab-bar button.active {
+    background: var(--surface);
+    color: var(--foreground);
+    box-shadow: 0 1px 2px rgb(20 23 31 / 8%);
+  }
+
+  .workbench-column:not(.active-mobile) {
+    display: none;
+  }
+}
+
+/* ── Follow-up Suggestion Chips ── */
+.follow-up-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.follow-up-chip {
+  min-height: 28px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.follow-up-chip:hover {
+  border-style: solid;
+  background: #edf8f5;
+}
+
+/* ── Score Breakdown Grid ── */
+.score-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.score-dimension {
+  padding: 8px 10px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+
+.score-dimension dt {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 0;
+}
+
+.score-dimension dd {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 2px 0 0;
+}
+
+/* ── Copy Button ── */
+.copy-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.copy-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Asset Grouping ── */
+.asset-group {
+  margin-bottom: 12px;
+}
+
+.asset-group-header {
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Severity Accents ── */
+.rule-card.severity-high {
+  border-left: 3px solid var(--danger);
+}
+
+.rule-card.severity-medium {
+  border-left: 3px solid var(--warning);
+}
+
+.badge.critical {
+  background: #fef3f2;
+  color: #7a271a;
+}
+
+/* ── Disabled Reason ── */
+.disabled-reason {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Loading Indicator ── */
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.loading-indicator {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* ── Guardrail Items ── */
+.guardrail-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.guardrail-item {
+  padding: 6px 8px;
+  background: #fffaeb;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+/* ── Unknown Items ── */
+.unknown-item {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f7f8fa;
+  border-radius: 6px;
+}
+
+.unknown-item strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14px;
+}
+
+.unknown-item p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Validator Warnings ── */
+.validator-warnings {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fffaeb;
+  border-radius: 6px;
+  border: 1px solid var(--warning);
+}
+
+.validator-warnings h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: var(--warning);
+}
+
+.validator-warnings p {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Overflow & Truncation ── */
+.overflow-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+dd {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ── Summary Section Header ── */
+.summary-section-header {
+  padding: 8px 14px;
+  background: #f7f8fa;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Composer disabled state ── */
+.composer input:disabled {
+  background: #f2f4f7;
+  color: var(--muted);
+}

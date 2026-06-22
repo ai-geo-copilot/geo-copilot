@@ -5,6 +5,7 @@ import { API_BASE_URL } from "../../lib/api-client";
 import { useGeoCopilot } from "../../hooks/use-geo-copilot";
 import type { AssetDraft, CopilotAssetDraft } from "../../types/api";
 import { AnalysisIntake } from "./analysis-intake";
+import { AnalysisStatusBar } from "./analysis-status-bar";
 import { AnalysisSummary } from "./analysis-summary";
 import { AssetDraftPanel } from "./asset-draft-panel";
 import { CopilotThread } from "./copilot-thread";
@@ -19,8 +20,19 @@ export function GeoCopilotWorkbench() {
   const { state, actions } = useGeoCopilot();
   const [inputMode, setInputMode] = useState<"url" | "upload">("url");
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const [activeMobileTab, setActiveMobileTab] = useState<"intake" | "thread" | "evidence">("intake");
   const analysisReady = state.analysis?.status === "completed";
   const busy = state.operations.creatingAnalysis;
+
+  const threadDisabled = !analysisReady || state.operations.sendingMessage;
+  let disabledReason: string | null = null;
+  if (state.operations.sendingMessage) {
+    disabledReason = "正在生成回答";
+  } else if (!state.analysis) {
+    disabledReason = "请先完成页面分析";
+  } else if (!state.providerConfig?.configured) {
+    disabledReason = "请先配置模型 API";
+  }
 
   const assetDrafts = useMemo<Array<AssetDraft | CopilotAssetDraft>>(() => {
     const diagnosisDrafts = state.diagnosis?.asset_drafts ?? [];
@@ -38,7 +50,36 @@ export function GeoCopilotWorkbench() {
 
   return (
     <main className="workbench-shell">
-      <section className="workbench-column intake-column" aria-label="分析输入">
+      <AnalysisStatusBar analysis={state.analysis} />
+
+      <nav className="mobile-tab-bar" aria-label="移动端导航">
+        <button
+          type="button"
+          className={activeMobileTab === "intake" ? "active" : ""}
+          onClick={() => setActiveMobileTab("intake")}
+        >
+          输入
+        </button>
+        <button
+          type="button"
+          className={activeMobileTab === "thread" ? "active" : ""}
+          onClick={() => setActiveMobileTab("thread")}
+        >
+          对话
+        </button>
+        <button
+          type="button"
+          className={activeMobileTab === "evidence" ? "active" : ""}
+          onClick={() => setActiveMobileTab("evidence")}
+        >
+          证据
+        </button>
+      </nav>
+
+      <section
+        className={`workbench-column intake-column${activeMobileTab === "intake" ? " active-mobile" : ""}`}
+        aria-label="分析输入"
+      >
         <p className="eyebrow">GEO Copilot</p>
         <h1>页面分析工作台</h1>
         <div className="segmented-control" aria-label="输入方式">
@@ -68,6 +109,7 @@ export function GeoCopilotWorkbench() {
         <ProviderConfigPanel
           config={state.providerConfig}
           testResult={state.providerTest}
+          error={state.error}
           saving={state.operations.savingProvider}
           testing={state.operations.testingProvider}
           onSave={actions.saveProvider}
@@ -84,7 +126,10 @@ export function GeoCopilotWorkbench() {
         ) : null}
       </section>
 
-      <section className="workbench-column thread-column" aria-label="Copilot 对话">
+      <section
+        className={`workbench-column thread-column${activeMobileTab === "thread" ? " active-mobile" : ""}`}
+        aria-label="Copilot 对话"
+      >
         <div className="section-header">
           <div>
             <p className="eyebrow">Conversation</p>
@@ -95,7 +140,8 @@ export function GeoCopilotWorkbench() {
           history={state.history}
           error={state.readModelErrors.history}
           sending={state.operations.sendingMessage}
-          disabled={!analysisReady}
+          disabled={threadDisabled}
+          disabledReason={disabledReason}
           selectedRef={selectedRef}
           onSend={actions.postMessage}
           onSelectRef={handleSelectRef}
@@ -103,7 +149,10 @@ export function GeoCopilotWorkbench() {
         <AssetDraftPanel drafts={assetDrafts} selectedRef={selectedRef} onSelectRef={handleSelectRef} />
       </section>
 
-      <aside className="workbench-column evidence-column" aria-label="页面证据">
+      <aside
+        className={`workbench-column evidence-column${activeMobileTab === "evidence" ? " active-mobile" : ""}`}
+        aria-label="页面证据"
+      >
         <p className="eyebrow">Evidence</p>
         <h2>页面摘要</h2>
         <AnalysisSummary analysis={state.analysis} selectedRef={selectedRef} onSelectRef={handleSelectRef} />

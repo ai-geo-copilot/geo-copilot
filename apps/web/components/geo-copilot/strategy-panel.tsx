@@ -24,7 +24,21 @@ export function StrategyPanel({ strategy, error, selectedRef, onSelectRef }: Str
             {step.rank}. {step.strategy_group}
           </strong>
           <p>{step.why_now}</p>
-          <RefChipList refs={[...step.method_refs, ...step.evidence_refs]} selectedRef={selectedRef} onSelectRef={onSelectRef} />
+          {step.expected_artifacts.length > 0 ? (
+            <p className="muted">预期产物：{step.expected_artifacts.join(", ")}</p>
+          ) : null}
+          {step.validator_requirements.length > 0 ? (
+            <div>
+              {step.validator_requirements.map((v, i) => (
+                <p key={i} className="muted">校验要求：{v}</p>
+              ))}
+            </div>
+          ) : null}
+          <RefChipList
+            refs={[...step.method_refs, ...step.evidence_refs]}
+            selectedRef={selectedRef}
+            onSelectRef={onSelectRef}
+          />
         </article>
       ))}
     </div>

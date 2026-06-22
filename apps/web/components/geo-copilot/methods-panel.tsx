@@ -23,7 +23,27 @@ export function MethodsPanel({ methods, error, selectedRef, onSelectRef }: Metho
           <strong>{method.title}</strong>
           <p>{method.why_selected}</p>
           <p>{method.text}</p>
-          <RefChipList refs={[method.method_ref, ...method.matched_evidence_refs]} selectedRef={selectedRef} onSelectRef={onSelectRef} />
+          {method.matched_rule_ids.length > 0 ? (
+            <p className="muted">匹配规则：{method.matched_rule_ids.join(", ")}</p>
+          ) : null}
+          {method.matched_failure_types.length > 0 ? (
+            <p className="muted">匹配失败类型：{method.matched_failure_types.join(", ")}</p>
+          ) : null}
+          {method.expected_artifacts.length > 0 ? (
+            <p className="muted">预期产物：{method.expected_artifacts.join(", ")}</p>
+          ) : null}
+          {method.guardrails.length > 0 ? (
+            <div className="guardrail-list">
+              {method.guardrails.map((g, i) => (
+                <p key={i} className="guardrail-item">{g}</p>
+              ))}
+            </div>
+          ) : null}
+          <RefChipList
+            refs={[method.method_ref, ...method.matched_rule_ids, ...method.matched_evidence_refs]}
+            selectedRef={selectedRef}
+            onSelectRef={onSelectRef}
+          />
         </article>
       ))}
     </div>

@@ -6,6 +6,7 @@ import type { ProviderConfigInput, ProviderConfigPublic, ProviderTestResponse } 
 type ProviderConfigPanelProps = {
   config: ProviderConfigPublic | null;
   testResult: ProviderTestResponse | null;
+  error: string | null;
   saving: boolean;
   testing: boolean;
   onSave: (input: ProviderConfigInput) => Promise<void>;
@@ -16,6 +17,7 @@ type ProviderConfigPanelProps = {
 export function ProviderConfigPanel({
   config,
   testResult,
+  error,
   saving,
   testing,
   onSave,
@@ -105,7 +107,14 @@ export function ProviderConfigPanel({
           当前：{config.provider} · {config.model} · {config.configured ? config.api_key_preview : "未配置 key"}
         </p>
       ) : null}
-      {testResult ? <p className="muted">测试成功：{testResult.model}</p> : null}
+      {testResult ? (
+        <p className={testResult.ok ? "muted" : "error-text"}>
+          {testResult.ok
+            ? `测试成功：${testResult.model} — ${testResult.message}`
+            : `测试失败：${testResult.message}`}
+        </p>
+      ) : null}
+      {error ? <p className="error-text">{error}</p> : null}
     </section>
   );
 }

@@ -1,4 +1,6 @@
 import type { RuleCheck, Severity } from "../types/api";
+import { ApiContractError } from "./api-guards";
+import { ApiHttpError } from "./api-client";
 
 const STATUS_RANK: Record<RuleCheck["status"], number> = {
   failed: 0,
@@ -23,6 +25,28 @@ export function sortRuleChecks(ruleChecks: RuleCheck[]): RuleCheck[] {
 }
 
 export function toUserMessage(error: unknown): string {
+  if (error instanceof ApiContractError) {
+    return "前后端响应契约不一致，需要开发检查";
+  }
+  if (error instanceof ApiHttpError) {
+    switch (error.status) {
+      case 404:
+        return "当前分析或产物不存在";
+      case 413:
+        return "文件超过后端限制";
+      case 422:
+        return "请求或模型输出未通过校验";
+      case 502:
+        return "Provider 配置或额度问题";
+      case 503:
+        return "Provider 暂不可用，可稍后重试";
+      default:
+        return error.detail || `请求失败 (HTTP ${error.status})`;
+    }
+  }
+  if (error instanceof TypeError) {
+    return "API未连接或配置错误";
+  }
   if (error instanceof Error) {
     return error.message;
   }

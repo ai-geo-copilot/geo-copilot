@@ -18,10 +18,11 @@ export function RuleCheckList({ ruleChecks, selectedRef, onSelectRef }: RuleChec
   return (
     <div className="rule-list">
       {sorted.map((rule) => (
-        <article className={highlightClass("rule-card", selectedRef, rule.evidence_refs)} key={rule.rule_id}>
+        <article className={highlightClass(`rule-card severity-${rule.severity}`, selectedRef, rule.evidence_refs)} key={rule.rule_id}>
           <div className="rule-meta">
             <span className={`badge ${rule.status}`}>{rule.status}</span>
             <span className="badge neutral">{rule.severity}</span>
+            {rule.failure_type ? <span className="badge neutral">{rule.failure_type}</span> : null}
           </div>
           <strong>{rule.rule_id}</strong>
           <p>{rule.finding}</p>
