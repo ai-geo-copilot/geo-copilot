@@ -302,7 +302,9 @@
           "enum": [
             "content_block",
             "heading",
-            "table"
+            "table",
+            "claim_candidate",
+            "statistic_candidate"
           ],
           "title": "Source",
           "type": "string"

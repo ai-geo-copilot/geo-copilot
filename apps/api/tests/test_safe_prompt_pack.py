@@ -50,6 +50,22 @@ def test_safe_prompt_pack_contains_only_safe_structured_inputs() -> None:
     assert "<!--" not in payload_text.lower()
 
 
+def test_safe_prompt_pack_includes_claim_candidate_excerpt_text() -> None:
+    pack = _build_pack("cjk_comparison_page.html", "https://example.com/zh/compare/geo-helper-vs-searchstack")
+    profile = build_page_content_profile(pack)
+    rule_checks = build_rule_checks(pack, profile)
+    method_pack = compile_method_pack()
+    retrieved_methods = select_methods(profile, rule_checks, method_pack)
+    strategy_plan = plan_strategy(retrieved_methods, profile, rule_checks, method_pack)
+
+    safe_pack = build_safe_prompt_pack(pack, profile, rule_checks, retrieved_methods, strategy_plan)
+    claim_excerpts = [excerpt for excerpt in safe_pack.evidence_excerpts if excerpt.source == "claim_candidate"]
+
+    assert claim_excerpts
+    assert claim_excerpts[0].evidence_ref.startswith("geo_signals.claim_candidates[")
+    assert claim_excerpts[0].text
+
+
 def test_safe_prompt_pack_validator_rejects_unsafe_excerpt_markup() -> None:
     pack = _build_pack("cjk_comparison_page.html", "https://example.com/zh/compare/geo-helper-vs-searchstack")
     profile = build_page_content_profile(pack)

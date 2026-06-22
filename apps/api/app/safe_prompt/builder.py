@@ -8,7 +8,7 @@ from .models import SafeEvidenceExcerpt, SafePrimaryEntity, SafeProfileFacts, Sa
 from .validator import validate_safe_prompt_pack
 
 
-MAX_EXCERPTS = 12
+MAX_EXCERPTS = 24
 MAX_EXCERPT_CHARS = 500
 
 
@@ -79,6 +79,8 @@ def _build_excerpts(
     content_by_ref = {block.evidence_ref: block.text for block in pack.content_blocks}
     table_by_ref = {table.evidence_ref: table.text for table in pack.structure.tables}
     heading_by_ref = {heading.evidence_ref: heading.text for heading in pack.structure.headings}
+    claim_by_ref = {claim.evidence_ref: claim.text for claim in pack.geo_signals.claim_candidates}
+    statistic_by_ref = {stat.evidence_ref: stat.value_text for stat in pack.geo_signals.statistics}
     excerpts: list[SafeEvidenceExcerpt] = []
 
     for evidence_ref in wanted_refs:
@@ -88,6 +90,10 @@ def _build_excerpts(
             excerpts.append(_excerpt(evidence_ref, table_by_ref[evidence_ref], "table"))
         elif evidence_ref in heading_by_ref:
             excerpts.append(_excerpt(evidence_ref, heading_by_ref[evidence_ref], "heading"))
+        elif evidence_ref in claim_by_ref:
+            excerpts.append(_excerpt(evidence_ref, claim_by_ref[evidence_ref], "claim_candidate"))
+        elif evidence_ref in statistic_by_ref:
+            excerpts.append(_excerpt(evidence_ref, statistic_by_ref[evidence_ref], "statistic_candidate"))
         if len(excerpts) >= MAX_EXCERPTS:
             break
     return excerpts

@@ -159,6 +159,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `apps/web` 已完成前端接口 / 数据 / 功能层本轮补齐：新增 `types/api.ts`、`lib/api-client.ts`、`lib/api-guards.ts`、`lib/format.ts`、`hooks/use-geo-copilot.ts`、`mocks/workbench-data.ts`，并拆出 `analysis-intake`、`upload-intake`、`analysis-summary`、`rule-check-list`、`methods-panel`、`strategy-panel`、`diagnosis-panel`、`copilot-thread`、`asset-draft-panel`、`ref-chip` 和 `workbench` 组件；当前首页已从静态 scaffold 改为最小 GEO Copilot Workbench，可调用 URL analysis、upload analysis、methods、strategy、diagnosis 和 messages 相关 client/hook，并具备上传 UI、细粒度 operation state、refs chip / 聚焦、asset drafts 基础展示和更深层 response guards。
 - `apps/web` 已映射用户自带 LLM provider 配置：新增 provider config 类型、response guards、API client 方法、hook actions 和 `provider-config-panel`，前端可提交、测试、清除 provider 配置；API key 仅通过后端接口提交，不由浏览器直接调用第三方模型 API。
 - `origin/front-end` 的完整前端展示层已快进合入当前 `main` 工作区：新增 `analysis-status-bar`，并增强 `analysis-summary`、`asset-draft-panel`、`copilot-thread`、`diagnosis-panel`、`methods-panel`、`strategy-panel`、`provider-config-panel` 和整体 CSS。合入后修复了 `analysis-status-bar` 作为 grid 子项导致桌面三栏错位的问题，当前状态栏跨整行，Intake / Thread / Evidence 在 1440px 下同一行展示。
+- Copilot / Diagnosis 的“改哪里”反馈已完成一次可落地性修复：`SafePromptPack.evidence_excerpts` 现在会把 `geo_signals.claim_candidates[*]` 与 `geo_signals.statistics[*]` 转成安全原文片段，prompt 明确要求在用户询问具体修改位置时引用 excerpt 原文、source type 和 evidence_ref，而不是只返回抽象 ref 列表。
 
 ### 4.4 当前契约状态
 
@@ -274,6 +275,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `python -m pytest apps/api/tests/test_llm_settings.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py`
 - `npm --workspace apps/web run typecheck`
 - `npm --workspace apps/web run build`
+- `python -m pytest apps/api/tests/test_safe_prompt_pack.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_prompt.py apps/api/tests/test_diagnosis_validator.py`
 - 本地服务验证：`python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000` 与 `npm --workspace apps/web run dev -- --hostname 127.0.0.1 --port 3000`
 - Playwright 浏览器 smoke：访问 `http://localhost:3000`，桌面 1440x1000 与移动 375x900 检查首屏、移动 tab、横向溢出；桌面上传 `apps/api/tests/fixtures/html/cjk_product_page.html` 后检查 summary / rules / methods / strategy
 
@@ -293,7 +295,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 
 最新验证结果：
 
-- `pytest`：93 passed
+- `pytest`：94 passed
 - Page Evidence service 局部回归：`python -m pytest apps/api/tests/test_page_evidence_service.py`，17 passed
 - Real HTML fixtures 局部回归：`python -m pytest apps/api/tests/test_real_html_fixtures.py`，6 passed
 - LLM provider 配置 / client / diagnosis / conversation 局部回归：`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py`，16 passed
@@ -303,6 +305,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Web typecheck：`npm --workspace apps/web run typecheck` 通过；已覆盖本轮拆分后的前端 API client、response guards、hook、upload UI、refs、asset draft 和 workbench 组件类型
 - Web build：`npm --workspace apps/web run build` 通过；Next.js 16.2.9 使用 Turbopack 编译成功
 - Web browser smoke：`http://localhost:3000` 桌面 1440x1000 首屏通过，包含 `页面分析工作台`、模型配置和 Evidence 面板，无横向溢出；移动 375x900 输入 / 对话 / 证据 tab 可切换，证据 tab 可展示页面摘要与规则检查空态，无横向溢出。使用上传 UI 分析 `cjk_product_page.html` 成功返回 completed analysis，状态栏 1 个、rule cards 23 个，summary / rules / methods / strategy 均展示；修复后 Intake / Thread / Evidence 三列同一行展示。浏览器仅观察到 favicon / missing diagnosis snapshot 404，不影响页面运行。
+- Safe Prompt / Conversation 定位反馈回归：`python -m pytest apps/api/tests/test_safe_prompt_pack.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_prompt.py apps/api/tests/test_diagnosis_validator.py`，14 passed；新增测试确认 safe prompt 会为 claim candidate 生成带原文 text 的 `claim_candidate` excerpt。
 - DeepSeek provider smoke test：使用本地已有配置中的 `deepseek-v4-pro`，基于最小 safe prompt snapshot 触发 `DiagnosisService.generate()`；结果 `SMOKE_STATUS=passed`，analysis id `52255559-0720-46a1-9b9b-59ccde149fd7`，`geo_score=50`，`issues=1`，`priority_actions=1`，`asset_drafts=0`，`unknowns=1`，并成功保存 `deepseek_diagnosis_meta.json`
 - DeepSeek Copilot provider smoke test：使用 `.env` fallback 读取本地 DeepSeek 配置；历史上 CNN 首页直接 URL 分析曾因 HTML 约 4.8 MB 超过旧抓取层上限返回 `fetch_failed`，现已通过 20 MB URL 抓取上限修正；此前用 CNN 首页 excerpt 走 uploaded HTML 同构管道成功生成 analysis id `ac188acf-8342-41d0-9e32-0d5b8e753c1b`，随后 `ConversationService.create_turn()` 调用 `deepseek-v4-pro` 成功返回并保存 `CopilotTurn`，turn id `a1b2c3d4-e5f6-7890-abcd-ef1234567890`，intent `prioritize_actions`
 - CNN URL 抓取 smoke test：`PageEvidenceService.analyze_safe("https://www.cnn.com/", "zh-CN")` 当前可直接完成 URL 分析，analysis id `6a7cc810-ab9d-4756-aded-6a3aa98e46ef`，final URL `https://edition.cnn.com/`，status `completed`；当前 page type heuristic 识别为 `docs`，后续如需优化应作为页面类型判定质量问题单独处理

@@ -29,7 +29,7 @@ class SafeProfileFacts(BaseModel):
 class SafeEvidenceExcerpt(BaseModel):
     evidence_ref: str
     text: str = Field(max_length=500)
-    source: Literal["content_block", "heading", "table"]
+    source: Literal["content_block", "heading", "table", "claim_candidate", "statistic_candidate"]
 
 
 class SafePromptSafetyPolicy(BaseModel):
