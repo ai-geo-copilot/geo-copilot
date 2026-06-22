@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import UUID
+
+from pydantic import ValidationError
+
+from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult
+from apps.api.app.llm.errors import DeepSeekInvalidResponseError
+from apps.api.app.page_evidence.storage import SnapshotStorage
+from apps.api.app.safe_prompt.validator import validate_safe_prompt_pack
+
+from .models import DeepSeekDiagnosis
+from .prompt import DiagnosisPromptBuilder
+from .validator import validate_deepseek_diagnosis
+
+
+class DiagnosisServiceError(RuntimeError):
+    def __init__(self, message: str, *, status_code: int) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
+@dataclass(frozen=True)
+class DeepSeekSettings:
+    api_key: str
+    base_url: str = "https://api.deepseek.com"
+    model: str = "deepseek-v4-flash"
+    timeout_seconds: float = 60.0
+    max_retries: int = 2
+    max_tokens: int = 4096
+
+    @classmethod
+    def from_env(cls) -> "DeepSeekSettings":
+        return cls(
+            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+            base_url=os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            model=os.environ.get("DEEPSEEK_MODEL", "deepseek-v4-flash"),
+            timeout_seconds=float(os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60")),
+            max_retries=int(os.environ.get("DEEPSEEK_MAX_RETRIES", "2")),
+            max_tokens=int(os.environ.get("DEEPSEEK_MAX_TOKENS", "4096")),
+        )
+
+
+class DiagnosisService:
+    def __init__(
+        self,
+        *,
+        storage: SnapshotStorage,
+        client: DeepSeekClient | None = None,
+        settings: DeepSeekSettings | None = None,
+        prompt_builder: DiagnosisPromptBuilder | None = None,
+    ) -> None:
+        self._storage = storage
+        self._settings = settings or DeepSeekSettings.from_env()
+        self._client = client
+        self._prompt_builder = prompt_builder or DiagnosisPromptBuilder()
+
+    def generate(self, analysis_id: UUID) -> DeepSeekDiagnosis:
+        if self._storage.load_result(analysis_id) is None:
+            raise DiagnosisServiceError("analysis not found", status_code=404)
+        safe_prompt_pack = self._storage.load_safe_prompt_pack(analysis_id)
+        if safe_prompt_pack is None:
+            raise DiagnosisServiceError("analysis safe prompt not found", status_code=404)
+        safe_prompt_pack = validate_safe_prompt_pack(safe_prompt_pack)
+
+        client = self._client or self._build_client()
+        result = client.create_json_completion(
+            messages=self._prompt_builder.build_messages(safe_prompt_pack),
+            user_id=f"analysis_{str(analysis_id).replace('-', '')}",
+            max_tokens=self._settings.max_tokens,
+        )
+        try:
+            diagnosis = DeepSeekDiagnosis.model_validate_json(result.content)
+        except ValidationError as exc:
+            raise DiagnosisServiceError("diagnosis provider returned invalid json", status_code=502) from exc
+        try:
+            diagnosis = validate_deepseek_diagnosis(diagnosis, safe_prompt_pack)
+        except ValueError as exc:
+            raise DiagnosisServiceError("diagnosis output failed validation", status_code=422) from exc
+        self._storage.save_deepseek_diagnosis(analysis_id, diagnosis, self._build_meta(result))
+        return diagnosis
+
+    def get(self, analysis_id: UUID) -> DeepSeekDiagnosis | None:
+        return self._storage.load_deepseek_diagnosis(analysis_id)
+
+    def _build_client(self) -> DeepSeekClient:
+        if not self._settings.api_key:
+            raise DiagnosisServiceError("diagnosis provider not configured", status_code=503)
+        return DeepSeekClient(
+            api_key=self._settings.api_key,
+            base_url=self._settings.base_url,
+            model=self._settings.model,
+            timeout_seconds=self._settings.timeout_seconds,
+            max_retries=self._settings.max_retries,
+        )
+
+    def _build_meta(self, result: DeepSeekCompletionResult) -> dict[str, object]:
+        return {
+            "provider": "deepseek",
+            "model": result.model,
+            "base_url": self._settings.base_url,
+            "request_hash": result.request_hash,
+            "response_hash": result.response_hash,
+            "finish_reason": result.finish_reason,
+            "usage": result.usage,
+            "latency_ms": result.latency_ms,
+            "retry_count": result.retry_count,
+            "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+        }

@@ -3,6 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field, HttpUrl
 
+from ..diagnosis.models import DeepSeekDiagnosis
+from ..diagnosis.service import DiagnosisService, DiagnosisServiceError
+from ..llm.errors import DeepSeekAuthError, DeepSeekBillingError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
 from ..methods.models import RetrievedMethodPack, StrategyPlan
 from ..page_evidence.service import PageEvidenceService
 from ..page_evidence.models import AnalysisResult, PageEvidencePack, PublicPageContentProfile, RuleCheck
@@ -12,6 +15,10 @@ router = APIRouter(prefix="/analyses", tags=["analyses"])
 
 def get_analysis_service(request: Request) -> PageEvidenceService:
     return request.app.state.page_evidence_service
+
+
+def get_diagnosis_service(request: Request) -> DiagnosisService:
+    return request.app.state.diagnosis_service
 
 
 class AnalysisCreateRequest(BaseModel):
@@ -101,6 +108,36 @@ def get_analysis_strategy(
     if strategy_plan is None:
         raise HTTPException(status_code=404, detail="analysis strategy not found")
     return strategy_plan
+
+
+@router.post("/{analysis_id}/diagnosis", response_model=DeepSeekDiagnosis)
+def create_analysis_diagnosis(
+    analysis_id: UUID,
+    service: DiagnosisService = Depends(get_diagnosis_service),
+) -> DeepSeekDiagnosis:
+    try:
+        return service.generate(analysis_id)
+    except DiagnosisServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except DeepSeekAuthError as exc:
+        raise HTTPException(status_code=502, detail="diagnosis provider auth failed") from exc
+    except DeepSeekBillingError as exc:
+        raise HTTPException(status_code=502, detail="diagnosis provider billing unavailable") from exc
+    except DeepSeekInvalidResponseError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except DeepSeekUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/{analysis_id}/diagnosis", response_model=DeepSeekDiagnosis)
+def get_analysis_diagnosis(
+    analysis_id: UUID,
+    service: DiagnosisService = Depends(get_diagnosis_service),
+) -> DeepSeekDiagnosis:
+    diagnosis = service.get(analysis_id)
+    if diagnosis is None:
+        raise HTTPException(status_code=404, detail="analysis diagnosis not found")
+    return diagnosis
 
 
 @router.post("/{analysis_id}/messages", response_model=FollowUpResponse)

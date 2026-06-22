@@ -24,7 +24,9 @@
 6. `GEO论文优化方法知识库.md`
 7. `模块开发补充/HTTP层GEO开发流程与完成标准.md`
 8. `模块开发补充/知识库架构技术开发方案.md`
-9. `后期开发/http层·遗漏.md`
+9. `模块开发补充/DeepSeek诊断层模型调用边界开发方案.md`
+10. `模块开发补充/Conversation与GEOCopilotChat层开发方案.md`
+11. `后期开发/http层·遗漏.md`
 
 ## 统一 GEO 方法论基线
 
@@ -50,6 +52,8 @@
 - `GEO论文优化方法知识库.md`：GEO 方法来源、证据等级与种子卡片依据
 - `模块开发补充/HTTP层GEO开发流程与完成标准.md`：HTTP / Page Evidence 模块的具体开发流程、字段补强、RuleChecks v1 和验收标准
 - `模块开发补充/知识库架构技术开发方案.md`：知识库、Method Pack Compiler、MethodSelector、Strategy Planner 和后续 RAG/DeepSeek 接入边界
+- `模块开发补充/DeepSeek诊断层模型调用边界开发方案.md`：DeepSeek Diagnosis 模型调用边界、API、snapshot、安全约束、错误处理和验收方案
+- `模块开发补充/Conversation与GEOCopilotChat层开发方案.md`：用户 URL / 上传页面后的 GEO Copilot 对话层、个性化上下文、ConversationSafePack、CopilotTurn、validator 和前端 Chat UI 选型方案
 - `后期开发/http层·遗漏.md`：HTTP / Page Evidence 在完整产品形态下的后期增强 backlog，不改变当前阶段优先级
 
 ## 非事实源

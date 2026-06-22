@@ -3,6 +3,7 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from apps.api.app.diagnosis.models import DeepSeekDiagnosis, DiagnosisScoreBreakdown
 from apps.api.app.main import app
 from apps.api.app.methods.models import (
     RetrievedMethodChunk,
@@ -29,7 +30,7 @@ from apps.api.app.page_evidence.models import (
     StructureEvidence,
     StructuredDataEvidence,
 )
-from apps.api.app.routers.analyses import get_analysis_service
+from apps.api.app.routers.analyses import get_analysis_service, get_diagnosis_service
 
 
 class _StubService:
@@ -196,9 +197,39 @@ class _StubService:
         )
 
 
+class _StubDiagnosisService:
+    def __init__(self) -> None:
+        self.generated = False
+
+    def generate(self, analysis_id):
+        self.generated = True
+        return _diagnosis()
+
+    def get(self, analysis_id):
+        if str(analysis_id) == "22222222-2222-2222-2222-222222222222":
+            return None
+        return _diagnosis()
+
+
+def _diagnosis() -> DeepSeekDiagnosis:
+    return DeepSeekDiagnosis(
+        geo_score=80,
+        score_breakdown=DiagnosisScoreBreakdown(
+            selection=80,
+            absorption=80,
+            claim_evidence=80,
+            structure=80,
+            schema_alignment=80,
+            safety=80,
+        ),
+        executive_summary="The page has a usable GEO foundation.",
+    )
+
+
 @pytest.fixture
 def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_analysis_service] = lambda request=None: _StubService()
+    app.dependency_overrides[get_diagnosis_service] = lambda request=None: _StubDiagnosisService()
     try:
         with TestClient(app) as test_client:
             yield test_client
@@ -281,3 +312,25 @@ def test_get_analysis_methods_and_strategy_return_404_when_snapshot_missing(clie
 
     assert methods_response.status_code == 404
     assert strategy_response.status_code == 404
+
+
+def test_create_analysis_diagnosis_returns_deepseek_diagnosis(client: TestClient) -> None:
+    response = client.post("/api/analyses/11111111-1111-1111-1111-111111111111/diagnosis")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["diagnosis_version"] == "deepseek-diagnosis-v0"
+    assert body["geo_score"] == 80
+    assert "diagnosis" not in client.post(
+        "/api/analyses",
+        json={"url": "https://example.com", "language": "zh-CN"},
+    ).json()
+
+
+def test_get_analysis_diagnosis_returns_saved_snapshot_or_404(client: TestClient) -> None:
+    response = client.get("/api/analyses/11111111-1111-1111-1111-111111111111/diagnosis")
+    missing_response = client.get("/api/analyses/22222222-2222-2222-2222-222222222222/diagnosis")
+
+    assert response.status_code == 200
+    assert response.json()["geo_score"] == 80
+    assert missing_response.status_code == 404

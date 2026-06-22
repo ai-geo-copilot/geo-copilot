@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .diagnosis.service import DiagnosisService
 from .page_evidence.service import PageEvidenceService
 from .routers import analyses, health
 
@@ -11,6 +12,7 @@ from .routers import analyses, health
 async def lifespan(app: FastAPI):
     service = PageEvidenceService()
     app.state.page_evidence_service = service
+    app.state.diagnosis_service = DiagnosisService(storage=service.storage)
     try:
         yield
     finally:

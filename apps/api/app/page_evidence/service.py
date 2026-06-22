@@ -7,6 +7,7 @@ import httpx
 from apps.api.app.methods.planner import plan_strategy
 from apps.api.app.methods.selector import select_methods
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
+from apps.api.app.diagnosis.models import DeepSeekDiagnosis
 from apps.api.app.safe_prompt.builder import build_safe_prompt_pack
 from apps.api.app.safe_prompt.models import SafePromptPack
 
@@ -39,6 +40,10 @@ class PageEvidenceService:
         self._fetcher.close()
         if self._client is not None:
             self._client.close()
+
+    @property
+    def storage(self) -> SnapshotStorage:
+        return self._storage
 
     def analyze(self, url: str, language: str) -> AnalysisResult:
         analysis_id = uuid4()
@@ -144,3 +149,14 @@ class PageEvidenceService:
 
     def get_safe_prompt_pack(self, analysis_id: UUID) -> SafePromptPack | None:
         return self._storage.load_safe_prompt_pack(analysis_id)
+
+    def save_deepseek_diagnosis(
+        self,
+        analysis_id: UUID,
+        diagnosis: DeepSeekDiagnosis,
+        metadata: dict[str, object],
+    ) -> None:
+        self._storage.save_deepseek_diagnosis(analysis_id, diagnosis, metadata)
+
+    def get_deepseek_diagnosis(self, analysis_id: UUID) -> DeepSeekDiagnosis | None:
+        return self._storage.load_deepseek_diagnosis(analysis_id)

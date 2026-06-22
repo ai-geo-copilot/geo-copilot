@@ -5,6 +5,7 @@ from pathlib import Path
 from uuid import UUID
 
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
+from apps.api.app.diagnosis.models import DeepSeekDiagnosis
 from apps.api.app.safe_prompt.models import SafePromptPack
 
 from .models import AnalysisResult, PageContentProfile, PageEvidencePack, RuleCheck
@@ -91,3 +92,26 @@ class SnapshotStorage:
         if not safe_prompt_file.exists():
             return None
         return SafePromptPack.model_validate_json(safe_prompt_file.read_text(encoding="utf-8"))
+
+    def save_deepseek_diagnosis(
+        self,
+        analysis_id: UUID,
+        diagnosis: DeepSeekDiagnosis,
+        metadata: dict[str, object],
+    ) -> None:
+        snapshot_dir = self.get_snapshot_dir(analysis_id)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        (snapshot_dir / "deepseek_diagnosis.json").write_text(
+            json.dumps(diagnosis.model_dump(mode="json"), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        (snapshot_dir / "deepseek_diagnosis_meta.json").write_text(
+            json.dumps(metadata, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def load_deepseek_diagnosis(self, analysis_id: UUID) -> DeepSeekDiagnosis | None:
+        diagnosis_file = self._root_dir / str(analysis_id) / "deepseek_diagnosis.json"
+        if not diagnosis_file.exists():
+            return None
+        return DeepSeekDiagnosis.model_validate_json(diagnosis_file.read_text(encoding="utf-8"))
