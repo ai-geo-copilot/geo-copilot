@@ -16,6 +16,7 @@ from .errors import (
     DeepSeekInvalidResponseError,
     DeepSeekUnavailableError,
 )
+from .settings import LLMProviderSettings
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class DeepSeekClient:
         client: httpx.Client | None = None,
         timeout_seconds: float = 60.0,
         max_retries: int = 2,
+        provider: str = "deepseek",
     ) -> None:
         if not api_key:
             raise ValueError("api_key is required")
@@ -48,6 +50,7 @@ class DeepSeekClient:
         self._api_key = api_key
         self._model = model
         self._base_url = base_url.rstrip("/")
+        self._provider = provider
         self._client = client or httpx.Client(
             timeout=httpx.Timeout(timeout_seconds),
             limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
@@ -73,10 +76,13 @@ class DeepSeekClient:
             "response_format": {"type": "json_object"},
             "max_tokens": max_tokens,
             "stream": False,
-            "thinking": {"type": "disabled"},
             "temperature": 0,
-            "user_id": user_id,
         }
+        if self._provider == "deepseek":
+            body["thinking"] = {"type": "disabled"}
+            body["user_id"] = user_id
+        else:
+            body["user"] = user_id
         request_hash = _hash_json(body)
         started = time.perf_counter()
         retry_count = 0
@@ -143,6 +149,24 @@ class DeepSeekClient:
                 status_code=status_code,
             )
         raise DeepSeekClientError("diagnosis provider request failed", status_code=status_code)
+
+
+def build_llm_client(
+    settings: LLMProviderSettings,
+    *,
+    client: httpx.Client | None = None,
+) -> DeepSeekClient:
+    if settings.provider == "anthropic":
+        raise DeepSeekClientError("anthropic provider is not supported in this build", status_code=422)
+    return DeepSeekClient(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        model=settings.model,
+        client=client,
+        timeout_seconds=settings.timeout_seconds,
+        max_retries=settings.max_retries,
+        provider=settings.provider,
+    )
 
 
 def _hash_json(payload: dict[str, Any]) -> str:

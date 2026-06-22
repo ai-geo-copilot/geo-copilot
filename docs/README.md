@@ -26,7 +26,9 @@
 8. `模块开发补充/知识库架构技术开发方案.md`
 9. `模块开发补充/DeepSeek诊断层模型调用边界开发方案.md`
 10. `模块开发补充/Conversation与GEOCopilotChat层开发方案.md`
-11. `后期开发/http层·遗漏.md`
+11. `模块开发补充/前端页面与接口对接开发方案.md`
+12. `模块开发补充/PageEvidence启发式规则质量优化方案.md`
+13. `后期开发/http层·遗漏.md`
 
 ## 统一 GEO 方法论基线
 
@@ -54,6 +56,8 @@
 - `模块开发补充/知识库架构技术开发方案.md`：知识库、Method Pack Compiler、MethodSelector、Strategy Planner 和后续 RAG/DeepSeek 接入边界
 - `模块开发补充/DeepSeek诊断层模型调用边界开发方案.md`：DeepSeek Diagnosis 模型调用边界、API、snapshot、安全约束、错误处理和验收方案
 - `模块开发补充/Conversation与GEOCopilotChat层开发方案.md`：用户 URL / 上传页面后的 GEO Copilot 对话层、个性化上下文、ConversationSafePack、CopilotTurn、validator 和前端 Chat UI 选型方案
+- `模块开发补充/前端页面与接口对接开发方案.md`：`apps/web` 当前前端状态、HTML/CSS 页面呈现、接口联调、GEO Copilot Workbench 收口、外部 GitHub 方案取舍和验收方案
+- `模块开发补充/PageEvidence启发式规则质量优化方案.md`：PageEvidence page type、main content、schema alignment、readiness 和 RuleChecks heuristic 的可解释优化方案、评估矩阵和防过拟合规则
 - `后期开发/http层·遗漏.md`：HTTP / Page Evidence 在完整产品形态下的后期增强 backlog，不改变当前阶段优先级
 
 ## 非事实源

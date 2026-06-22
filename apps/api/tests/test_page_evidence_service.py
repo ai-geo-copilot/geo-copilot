@@ -4,7 +4,7 @@ import socket
 
 import httpx
 
-from apps.api.app.page_evidence.fetcher import PageFetcher
+from apps.api.app.page_evidence.fetcher import DEFAULT_MAX_FETCH_BYTES, PageFetcher
 from apps.api.app.page_input.models import PageInputContext
 from apps.api.app.page_input.sources import FetchedUrlSource, PageInputSource
 from apps.api.app.page_evidence.service import PageEvidenceService
@@ -203,6 +203,15 @@ def test_fetcher_rejects_non_html_response() -> None:
         assert getattr(exc, "error_code", None) == "non_html_response"
     else:  # pragma: no cover
         raise AssertionError("Expected non-html response error")
+
+
+def test_fetcher_default_body_limit_is_twenty_mb() -> None:
+    fetcher = PageFetcher(client=httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(204))))
+
+    try:
+        assert fetcher._max_bytes == DEFAULT_MAX_FETCH_BYTES == 20_000_000
+    finally:
+        fetcher.close()
 
 
 def test_fetcher_rejects_large_response_body() -> None:

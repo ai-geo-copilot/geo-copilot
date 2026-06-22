@@ -98,6 +98,49 @@ def test_real_html_fixtures_parse_known_brand_pages() -> None:
     assert all(heading.level != 1 for heading in moz_parsed.structure.headings)
 
 
+def test_real_html_diverse_fixtures_parse_metadata_and_headings() -> None:
+    cnn_pack, cnn_parsed, _, _, _ = _build_pack(
+        "real_cnn_homepage_excerpt.html",
+        "https://www.cnn.com/",
+    )
+    apple_pack, apple_parsed, _, _, _ = _build_pack(
+        "real_apple_iphone_excerpt.html",
+        "https://www.apple.com/iphone/",
+    )
+    stripe_pack, stripe_parsed, _, _, _ = _build_pack(
+        "real_stripe_pricing_excerpt.html",
+        "https://stripe.com/en-sg/pricing",
+    )
+    wikipedia_pack, wikipedia_parsed, _, _, _ = _build_pack(
+        "real_wikipedia_ai_excerpt.html",
+        "https://en.wikipedia.org/wiki/Artificial_intelligence",
+    )
+    cdc_pack, cdc_parsed, _, _, _ = _build_pack(
+        "real_cdc_diabetes_excerpt.html",
+        "https://www.cdc.gov/diabetes/about/index.html",
+    )
+
+    assert cnn_parsed.metadata.title.value == "Breaking News, Latest News and Videos | CNN"
+    assert cnn_pack.metadata.canonical.value == "https://www.cnn.com"
+    assert any("World Cup" in heading.text for heading in cnn_parsed.structure.headings)
+
+    assert apple_parsed.metadata.title.value == "iPhone - Apple"
+    assert apple_pack.metadata.canonical.value == "https://www.apple.com/iphone/"
+    assert any(heading.level == 1 and heading.text == "iPhone" for heading in apple_parsed.structure.headings)
+
+    assert stripe_parsed.metadata.title.value == "Pricing & Fees"
+    assert stripe_pack.metadata.canonical.value == "https://stripe.com/en-sg/pricing"
+    assert any("Payments" in heading.text for heading in stripe_parsed.structure.headings)
+
+    assert wikipedia_parsed.metadata.title.value == "Artificial intelligence - Wikipedia"
+    assert wikipedia_pack.metadata.canonical.value == "https://en.wikipedia.org/wiki/Artificial_intelligence"
+    assert any(heading.level == 1 and heading.text == "Artificial intelligence" for heading in wikipedia_parsed.structure.headings)
+
+    assert cdc_parsed.metadata.title.value == "Diabetes Basics | Diabetes | CDC"
+    assert cdc_pack.metadata.canonical.value == "https://www.cdc.gov/diabetes/about/index.html"
+    assert any(heading.level == 1 and heading.text == "Diabetes Basics" for heading in cdc_parsed.structure.headings)
+
+
 def test_real_html_fixtures_build_expected_geo_signals() -> None:
     _, _, shopify_signals, _, _ = _build_pack(
         "real_shopify_plus_excerpt.html",
@@ -133,6 +176,27 @@ def test_real_html_fixtures_build_expected_geo_signals() -> None:
     assert moz_signals.page_type_hint == "docs"
     assert any(unit.unit_type == "definition" for unit in moz_signals.answer_unit_candidates)
     assert moz_signals.statistics
+
+
+def test_real_html_diverse_fixtures_exercise_profile_and_rules_pipeline() -> None:
+    cases = [
+        ("real_cnn_homepage_excerpt.html", "https://www.cnn.com/"),
+        ("real_apple_iphone_excerpt.html", "https://www.apple.com/iphone/"),
+        ("real_stripe_pricing_excerpt.html", "https://stripe.com/en-sg/pricing"),
+        ("real_wikipedia_ai_excerpt.html", "https://en.wikipedia.org/wiki/Artificial_intelligence"),
+        ("real_cdc_diabetes_excerpt.html", "https://www.cdc.gov/diabetes/about/index.html"),
+    ]
+
+    for fixture_name, url in cases:
+        pack, _, signals, profile, checks = _build_pack(fixture_name, url)
+
+        assert pack.rule_check_inputs.substance_score > 100
+        assert pack.content_blocks
+        assert signals.page_type_hint in {"article", "docs", "landing", "product", "comparison", "home", "unknown"}
+        assert profile.selection_readiness.status in {"strong", "mixed", "weak"}
+        assert profile.absorption_readiness.status in {"strong", "mixed", "weak"}
+        assert "content.claim_without_evidence" in checks
+        assert "content.numeric_claim_without_source" in checks
 
 
 def test_real_html_fixtures_pin_profile_and_rule_behavior() -> None:
@@ -179,3 +243,26 @@ def test_real_html_fixtures_pin_profile_and_rule_behavior() -> None:
     assert moz_checks["structure.h1_missing_or_multiple"].status == "failed"
     assert moz_checks["schema.structured_data_missing"].status == "passed"
     assert moz_checks["selection.readiness_low"].status == "passed"
+
+
+def test_real_html_article_fixtures_pin_article_profile_behavior() -> None:
+    _, _, wikipedia_signals, wikipedia_profile, wikipedia_checks = _build_pack(
+        "real_wikipedia_ai_excerpt.html",
+        "https://en.wikipedia.org/wiki/Artificial_intelligence",
+    )
+    _, _, cdc_signals, cdc_profile, cdc_checks = _build_pack(
+        "real_cdc_diabetes_excerpt.html",
+        "https://www.cdc.gov/diabetes/about/index.html",
+    )
+
+    assert wikipedia_signals.page_type_hint == "article"
+    assert wikipedia_profile.page_type == "article"
+    assert wikipedia_profile.selection_readiness.status == "strong"
+    assert wikipedia_profile.absorption_readiness.status == "strong"
+    assert wikipedia_checks["schema.article_incomplete"].status == "warning"
+
+    assert cdc_signals.page_type_hint == "article"
+    assert cdc_profile.page_type == "article"
+    assert cdc_profile.selection_readiness.status == "strong"
+    assert cdc_profile.absorption_readiness.status == "strong"
+    assert cdc_checks["schema.article_incomplete"].status == "warning"

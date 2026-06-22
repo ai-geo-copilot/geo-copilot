@@ -5,8 +5,9 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
-from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult
+from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult, build_llm_client
 from apps.api.app.llm.errors import DeepSeekInvalidResponseError
+from apps.api.app.llm.provider_store import ProviderConfigStore
 from apps.api.app.llm.settings import DeepSeekSettings
 from apps.api.app.page_evidence.storage import SnapshotStorage
 from apps.api.app.safe_prompt.validator import validate_safe_prompt_pack
@@ -29,10 +30,12 @@ class DiagnosisService:
         storage: SnapshotStorage,
         client: DeepSeekClient | None = None,
         settings: DeepSeekSettings | None = None,
+        provider_store: ProviderConfigStore | None = None,
         prompt_builder: DiagnosisPromptBuilder | None = None,
     ) -> None:
         self._storage = storage
         self._settings = settings or DeepSeekSettings.from_env()
+        self._provider_store = provider_store
         self._client = client
         self._prompt_builder = prompt_builder or DiagnosisPromptBuilder()
 
@@ -48,7 +51,7 @@ class DiagnosisService:
         result = client.create_json_completion(
             messages=self._prompt_builder.build_messages(safe_prompt_pack),
             user_id=f"analysis_{str(analysis_id).replace('-', '')}",
-            max_tokens=self._settings.max_tokens,
+            max_tokens=self._effective_settings().max_tokens,
         )
         try:
             diagnosis = DeepSeekDiagnosis.model_validate_json(result.content)
@@ -65,21 +68,17 @@ class DiagnosisService:
         return self._storage.load_deepseek_diagnosis(analysis_id)
 
     def _build_client(self) -> DeepSeekClient:
-        if not self._settings.api_key:
+        settings = self._effective_settings()
+        if not settings.api_key:
             raise DiagnosisServiceError("diagnosis provider not configured", status_code=503)
-        return DeepSeekClient(
-            api_key=self._settings.api_key,
-            base_url=self._settings.base_url,
-            model=self._settings.model,
-            timeout_seconds=self._settings.timeout_seconds,
-            max_retries=self._settings.max_retries,
-        )
+        return build_llm_client(settings)
 
     def _build_meta(self, result: DeepSeekCompletionResult) -> dict[str, object]:
+        settings = self._effective_settings()
         return {
-            "provider": "deepseek",
+            "provider": settings.provider,
             "model": result.model,
-            "base_url": self._settings.base_url,
+            "base_url": settings.base_url,
             "request_hash": result.request_hash,
             "response_hash": result.response_hash,
             "finish_reason": result.finish_reason,
@@ -88,3 +87,8 @@ class DiagnosisService:
             "retry_count": result.retry_count,
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
+
+    def _effective_settings(self):
+        if self._provider_store is not None:
+            return self._provider_store.get_effective()
+        return self._settings.to_provider_settings()

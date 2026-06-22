@@ -14,6 +14,9 @@ from .models import FetchInfo, FetchedResource, RedirectHop
 from .url_safety import Resolver, validate_public_url
 
 
+DEFAULT_MAX_FETCH_BYTES = 20_000_000
+
+
 @dataclass
 class FetchResult:
     fetch_info: FetchInfo
@@ -27,7 +30,7 @@ class PageFetcher:
         *,
         timeout_seconds: float = 10.0,
         max_redirects: int = 5,
-        max_bytes: int = 1_000_000,
+        max_bytes: int = DEFAULT_MAX_FETCH_BYTES,
         max_auxiliary_workers: int = 4,
         resolver: Resolver | None = None,
     ) -> None:

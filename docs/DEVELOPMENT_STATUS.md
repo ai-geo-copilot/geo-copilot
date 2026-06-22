@@ -22,11 +22,11 @@
 
 > HTTP / Page Evidence v1 已完成最终冻结验收。
 > 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + MethodSelector v0 + Strategy Planner v0 + Methods / Strategy read-only API + Safe Prompt Pack v0 + DeepSeek diagnosis output schema/validator + DeepSeek Diagnosis 显式模型调用边界 + PageInputContext v0 + PageInputSource URL / uploaded HTML 管道 + Uploaded Page Intake v0 + snapshot + API base report + minimal public PageContentProfile subset`。
-> 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy`、`cjk-product`、`cjk-docs`、`cjk-comparison` 六类 synthetic fixture 覆盖，并新增 Shopify / Ahrefs / Moz 的真实 HTML excerpt fixture；当前公开 API 已冻结 `page_content_profile` 最小稳定子集，完整 `PageContentProfile` 继续保留在 service 内部结果、snapshot 和 `analysis.json` 中。本轮已完成一次抓取层性能优化，HTTP 层后续只接受不破坏 contract 的回归修复和实现增强。
+> 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy`、`cjk-product`、`cjk-docs`、`cjk-comparison` 六类 synthetic fixture 覆盖，并新增 Shopify / Ahrefs / Moz / CNN / Apple / Stripe / Wikipedia / CDC 的真实 HTML excerpt fixture；当前公开 API 已冻结 `page_content_profile` 最小稳定子集，完整 `PageContentProfile` 继续保留在 service 内部结果、snapshot 和 `analysis.json` 中。本轮已完成一次抓取层性能优化，HTTP 层后续只接受不破坏 contract 的回归修复和实现增强。
 
 ## 3. 当前优先级
 
-1. Conversation / GEO Copilot Chat 层按补充方案推进；当前已完成 Phase 1 `PageInputContext` 保存、Phase 2 `PageInputSource -> PageEvidenceService._analyze_source()` URL 同构分析管道、Phase 3 上传 HTML 页面分析和 Phase 4 非流式 Chat 后端最小闭环；下一步进入更多真实页面 CopilotTurn 质量样本与前端 Chat UI
+1. Conversation / GEO Copilot Chat 层按补充方案推进；当前已完成 Phase 1 `PageInputContext` 保存、Phase 2 `PageInputSource -> PageEvidenceService._analyze_source()` URL 同构分析管道、Phase 3 上传 HTML 页面分析、Phase 4 非流式 Chat 后端最小闭环、前端接口 / 数据 / 功能层本轮补齐，以及用户自带 LLM provider 配置接口；下一步进入更多真实页面 CopilotTurn 质量样本、视觉细化和浏览器联调
 2. DeepSeek Diagnosis 显式模型调用边界已完成，并已用 `deepseek-v4-pro` 做过一次真实 provider smoke test；后续只接受不改变基础 `AnalysisResponse` 的诊断层增强和回归修复
 3. 继续保持已冻结公开 contract 不变；`apps/api/app/page_evidence` 只接受服务于同构输入管道的兼容性内部调整、回归修复和不破坏 contract 的实现增强
 
@@ -135,10 +135,12 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Conversation / GEO Copilot Chat 后端最小闭环：已新增共享 `DeepSeekSettings`、`ConversationSafePack`、`DiagnosisCompactSummary`、`CopilotTurn`、prompt builder、validator、service、`POST /api/analyses/{analysis_id}/messages` 和 `GET /api/analyses/{analysis_id}/messages`；对话层只读取已保存 `safe_prompt_pack.json`、`input_context.json` 和可选 `deepseek_diagnosis.json` 压缩摘要，不读取 raw HTML 或完整 clean markdown；模型 JSON 输出需先通过 `CopilotTurn` Pydantic 校验与业务 validator，合法后才保存 default conversation turn snapshot
 - DeepSeek provider 配置读取：`DeepSeekSettings.from_env()` 当前会优先读取进程环境变量，并在未设置时从仓库根目录 `.env` 读取同名配置；测试只使用临时 `.env` 占位值，不读取或打印真实 API key
 - DeepSeek provider 配置：`.env.example` 已扩展 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`DEEPSEEK_TIMEOUT_SECONDS`、`DEEPSEEK_MAX_RETRIES`、`DEEPSEEK_MAX_TOKENS`；当前默认模型配置已改为 `deepseek-v4-pro`
+- 用户自带 LLM provider 配置接口已完成后端最小闭环：新增 `LLMProviderSettings`、`ProviderConfigStore`、`ProviderConfigRequest`、`GET /api/llm/provider`、`PUT /api/llm/provider`、`DELETE /api/llm/provider` 和 `POST /api/llm/provider/test`；当前配置只保存在 API 进程内，不落盘，不向前端回显 API key 明文；`DiagnosisService` 与 `ConversationService` 会从 provider store 动态读取当前配置。当前支持 `deepseek` 与 `openai_compatible`，其中 OpenAI / GLM / Mimo 等兼容 Chat Completions 的服务可走 `openai_compatible`；`anthropic` 因协议不同当前显式返回 422，不冒充已支持。
 - Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试，并已覆盖 `rdfa`、`opengraph-only`、`navigation-heavy` 场景，以及 snapshot 落盘 / round-trip 回归
 - 新增中文产品页 fixture：`apps/api/tests/fixtures/html/cjk_product_page.html`，并已把 parser、geo_signals、rule_checks、service 的中文页行为固定为正式回归样本
 - 新增中文文档页与中文比较页 fixture：`apps/api/tests/fixtures/html/cjk_docs_howto_page.html`、`apps/api/tests/fixtures/html/cjk_comparison_page.html`，并已把 docs / comparison 场景的 parser、geo_signals、page_content_profile、rule_checks、service 行为固定为正式回归样本
-- 新增真实品牌站 excerpt fixture：`apps/api/tests/fixtures/html/real_shopify_plus_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_keyword_research_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_seo_vs_sem_excerpt.html`、`apps/api/tests/fixtures/html/real_moz_beginners_guide_excerpt.html`，来源清单记录于 `apps/api/tests/fixtures/html/REAL_FIXTURE_SOURCES.md`
+- 新增真实站点 excerpt fixture：`apps/api/tests/fixtures/html/real_shopify_plus_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_keyword_research_excerpt.html`、`apps/api/tests/fixtures/html/real_ahrefs_seo_vs_sem_excerpt.html`、`apps/api/tests/fixtures/html/real_moz_beginners_guide_excerpt.html`、`apps/api/tests/fixtures/html/real_cnn_homepage_excerpt.html`、`apps/api/tests/fixtures/html/real_apple_iphone_excerpt.html`、`apps/api/tests/fixtures/html/real_stripe_pricing_excerpt.html`、`apps/api/tests/fixtures/html/real_wikipedia_ai_excerpt.html`、`apps/api/tests/fixtures/html/real_cdc_diabetes_excerpt.html`，来源清单记录于 `apps/api/tests/fixtures/html/REAL_FIXTURE_SOURCES.md`
+- 新增五类跨行业真实样本：CNN 新闻首页、Apple iPhone 消费电子产品/分类页、Stripe SaaS/支付定价页、Wikipedia 百科文章页、CDC 公共健康信息页；当前测试已确认这些样本可稳定进入 parser、geo_signals、PageContentProfile 和 RuleChecks pipeline。当前未修改 heuristic；样本已暴露 CNN 当前偏 `landing`、Apple / Stripe 当前偏 `docs` 的 page type 质量现象，后续应作为独立 heuristic 优化处理
 - `real_moz_beginners_guide_excerpt.html` 当前稳定复现了真实站点 excerpt 下的 `H1` 缺失结构问题，可用于冻结 `structure.h1_missing_or_multiple` 的真实样本行为
 - `geo_signals.statistics` 已支持对相邻内容块中的来源提示做确定性关联，数值 claim 不再只依赖“同段来源”识别
 - `geo_signals` 的 claim heuristic 已补充中文“领先”识别，中文比较页中的 unsupported claim 可被稳定纳入 `content_gaps` 与 `RuleChecks`
@@ -153,6 +155,9 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `RuleChecks v1` 已新增 P0 冻结矩阵测试，当前 18 条基础规则都至少有一个 pass 样本和一个 warning/failed 样本
 - 当前 HTTP 模块完成口径已由代码和测试验证：`PageEvidencePack v1`、`PageContentProfile` 最小稳定公开子集、`RuleChecks v1`、fixtures、snapshots 与 API base report 已全部收口
 - 抓取层已完成一次性能增强：`PageFetcher` 当前已使用 `httpx` 连接池 limits、URL public validation 缓存、基于 `Content-Length` 的超大响应头预拒绝、以及 4 个辅助抓取资源的并发 bundle 获取；`PageEvidenceService` 已改为复用 fetcher 的验证缓存和并发辅助抓取结果
+- URL HTML 抓取默认响应体上限已从 1 MB 提高到 20 MB，并保留流式读取过程中的超限拦截和 `Content-Length` 预拒绝；该调整不改变公开 `AnalysisResponse` / `PageEvidencePack` contract。上传接口仍保持当前 2 MB 文件上限
+- `apps/web` 已完成前端接口 / 数据 / 功能层本轮补齐：新增 `types/api.ts`、`lib/api-client.ts`、`lib/api-guards.ts`、`lib/format.ts`、`hooks/use-geo-copilot.ts`、`mocks/workbench-data.ts`，并拆出 `analysis-intake`、`upload-intake`、`analysis-summary`、`rule-check-list`、`methods-panel`、`strategy-panel`、`diagnosis-panel`、`copilot-thread`、`asset-draft-panel`、`ref-chip` 和 `workbench` 组件；当前首页已从静态 scaffold 改为最小 GEO Copilot Workbench，可调用 URL analysis、upload analysis、methods、strategy、diagnosis 和 messages 相关 client/hook，并具备上传 UI、细粒度 operation state、refs chip / 聚焦、asset drafts 基础展示和更深层 response guards。
+- `apps/web` 已映射用户自带 LLM provider 配置：新增 provider config 类型、response guards、API client 方法、hook actions 和 `provider-config-panel`，前端可提交、测试、清除 provider 配置；API key 仅通过后端接口提交，不由浏览器直接调用第三方模型 API。
 
 ### 4.4 当前契约状态
 
@@ -217,6 +222,10 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 已新增，用作用户 URL / 上传页面后的 Conversation / GEO Copilot Chat 层、个性化上下文、ConversationSafePack、CopilotTurn、validator 和前端 Chat UI 选型方案。
 - `docs/README.md` 已把该 Conversation / GEO Copilot Chat 层补充文档加入正式阅读入口。
 - `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 已根据 `docs/开发过程中定义文件/项目分析与开发方案.md` 的讨论输入完成一次方案收敛：Conversation v0 改为优先落地 `PageInputContext`，再抽出 `PageInputSource -> PageEvidenceService._analyze_source()` 同构分析管道，然后做上传页面与非流式对话；诊断上下文改为可选 `DiagnosisCompactSummary`，不再建议每轮对话传完整 `DeepSeekDiagnosis`。
+- `docs/模块开发补充/PageEvidence启发式规则质量优化方案.md` 已新增，用作 PageEvidence page type、main content、schema alignment、readiness 和 RuleChecks heuristic 的可解释优化方案；方案参考 Google Search Central、Schema.org、WHATWG HTML、Mozilla Readability、Trafilatura、jusText、scikit-learn cross-validation 和 Google Rules of Machine Learning 等资料，并明确不使用域名/品牌/CSS class 特判。
+- `docs/README.md` 已把该 PageEvidence heuristic 优化方案加入正式阅读入口。
+- `docs/模块开发补充/前端页面与接口对接开发方案.md` 已更新为当前状态与剩余前端页面交付方案，用作 `apps/web` 前端 HTML/CSS 页面呈现、接口联调、GEO Copilot Workbench 状态收口、外部 GitHub 方案取舍和验收方案。
+- `docs/README.md` 已把该前端页面与接口对接方案加入正式阅读入口。
 
 当前文档口径：
 
@@ -230,6 +239,8 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - 知识库架构当前正式口径是 `Research KB -> Method Pack Compiler -> Runtime Method Selector -> Strategy Planner -> Safe Prompt Pack -> DeepSeek Diagnosis -> Validator`；当前已完成 deterministic `MethodSelector v0`、`Strategy Planner v0`、只读 Methods / Strategy API、Safe Prompt Pack v0、DeepSeek diagnosis 输出 validator 和 DeepSeek Diagnosis 显式调用边界，不把 RAGFlow / Dify / Qdrant / LlamaIndex 作为前置依赖。
 - DeepSeek 诊断层当前已按正式方案实现显式后置模型调用边界：`safe_prompt_pack.json -> Diagnosis Prompt Builder -> DeepSeek Client -> JSON parse -> DeepSeekDiagnosis model validation -> validate_deepseek_diagnosis() -> deepseek_diagnosis.json -> read-only diagnosis API`；实现不把 DeepSeek 默认接入基础 `POST /api/analyses`，不改变已冻结 `AnalysisResponse`，并且只消费 Safe Prompt Pack。
 - Conversation / GEO Copilot Chat 层当前正式口径是 `用户 URL / 上传页面 -> PageInputContext -> PageInputSource -> PageEvidencePack -> SafePromptPack -> ConversationSafePack -> DeepSeek Copilot Turn -> CopilotTurn validator -> 对话 snapshot`；`DeepSeekDiagnosis` 只作为可选输入，经 `DiagnosisCompactSummary` 压缩后进入 ConversationSafePack，不作为对话层硬依赖。当前已实现非流式后端最小闭环和 default conversation snapshot；后续实现不得让 DeepSeek 直接读取 raw HTML、完整 clean markdown 或未经裁剪的上传页面内容，不得改变已冻结基础 `AnalysisResponse`。
+- 前端页面与接口对接当前正式口径是 `GEO Copilot Workbench v0`：当前 `apps/web` 已完成 URL / upload analysis、methods、strategy、diagnosis、非流式 messages 和 LLM provider config 的前端接口 / 数据 / 功能层最小闭环；下一步只在该基线上收口 HTML/CSS 页面呈现、响应式、错误态、真实后端浏览器联调和前端 smoke。前端不读取 `snapshot_dir` 本地文件，不直接调用 DeepSeek，不渲染 raw HTML，并且不把完整报告页、RAG、流式响应、账号系统或可发布 Copilot actions 纳入 v0。
+- PageEvidence heuristic 优化当前正式口径是先新增内部可解释 trace / feature vector 和 page type candidate score，再用真实 fixture calibration / holdout 防过拟合；目标是在不改变公开 contract 的前提下修复 CNN / Apple / Stripe 暴露的大型首页、产品家族页、定价页误判风险。当前仅完成方案文档，尚未改 heuristic 代码。
 
 ## 5. 当前边界
 
@@ -237,7 +248,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 
 - `PageContentProfile v1` 完整对象的全量对外字段口径最终冻结
 - 更真实页面 snapshot 下的 DeepSeek diagnosis 质量样本
-- Conversation / GEO Copilot Chat 前端 Chat UI 尚未实现；后端仍缺真实 provider CopilotTurn 质量样本和更完整资产草案样本
+- Conversation / GEO Copilot Chat 前端接口 / 数据 / 功能层已完成本轮补齐；视觉精修、浏览器真实联调、前端自动化测试和更完整移动端验收仍未完成；后端仍缺真实 provider CopilotTurn 质量样本和更完整资产草案样本
 
 当前实现边界：
 
@@ -255,8 +266,13 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 
 - `python -m pytest apps/api/tests`
 - `python -m compileall apps/api/app apps/api/tests`
+- `python -m pytest apps/api/tests/test_page_evidence_service.py`
+- `python -m pytest apps/api/tests/test_real_html_fixtures.py`
+- `python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py`
 - `python -m pytest apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_contract.py`
 - `python -m pytest apps/api/tests/test_llm_settings.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run build`
 
 最新文档验证命令：
 
@@ -267,19 +283,31 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
 - `rg -n "Conversation与GEOCopilotChat层开发方案|ConversationSafePack|CopilotTurn|assistant-ui|POST /api/analyses/\{analysis_id\}/messages" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
 - `rg -n "DiagnosisCompactSummary|PageInputSource|turn_user_context|_analyze_source|llm/settings.py" 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
+- `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\PageEvidence启发式规则质量优化方案.md'`
+- `rg -n "PageEvidence启发式规则质量优化方案|PageHeuristicTrace|PageTypeCandidateScore|防过拟合|CNN|Apple|Stripe" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\PageEvidence启发式规则质量优化方案.md'`
+- `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\前端页面与接口对接开发方案.md'`
+- `rg -n "前端页面与接口对接开发方案|ready-for-frontend-page-implementation|GEO Copilot Workbench|当前已完成|当前仍未完成|真实后端浏览器联调|前端 smoke" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\前端页面与接口对接开发方案.md'`
 
 最新验证结果：
 
-- `pytest`：86 passed
+- `pytest`：93 passed
+- Page Evidence service 局部回归：`python -m pytest apps/api/tests/test_page_evidence_service.py`，17 passed
+- Real HTML fixtures 局部回归：`python -m pytest apps/api/tests/test_real_html_fixtures.py`，6 passed
+- LLM provider 配置 / client / diagnosis / conversation 局部回归：`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py`，16 passed
 - Conversation 局部回归：`python -m pytest apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_contract.py`，20 passed
 - LLM settings / Conversation 局部回归：`python -m pytest apps/api/tests/test_llm_settings.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py`，10 passed
 - `compileall`：通过
+- Web typecheck：`npm --workspace apps/web run typecheck` 通过；已覆盖本轮拆分后的前端 API client、response guards、hook、upload UI、refs、asset draft 和 workbench 组件类型
+- Web build：`npm --workspace apps/web run build` 通过；Next.js 16.2.9 使用 Turbopack 编译成功
 - DeepSeek provider smoke test：使用本地已有配置中的 `deepseek-v4-pro`，基于最小 safe prompt snapshot 触发 `DiagnosisService.generate()`；结果 `SMOKE_STATUS=passed`，analysis id `52255559-0720-46a1-9b9b-59ccde149fd7`，`geo_score=50`，`issues=1`，`priority_actions=1`，`asset_drafts=0`，`unknowns=1`，并成功保存 `deepseek_diagnosis_meta.json`
-- DeepSeek Copilot provider smoke test：使用 `.env` fallback 读取本地 DeepSeek 配置；CNN 首页直接 URL 分析因 HTML 约 4.8 MB 超过当前抓取层上限返回 `fetch_failed`，改用 CNN 首页 excerpt 走 uploaded HTML 同构管道成功生成 analysis id `ac188acf-8342-41d0-9e32-0d5b8e753c1b`；随后 `ConversationService.create_turn()` 调用 `deepseek-v4-pro` 成功返回并保存 `CopilotTurn`，turn id `a1b2c3d4-e5f6-7890-abcd-ef1234567890`，intent `prioritize_actions`
+- DeepSeek Copilot provider smoke test：使用 `.env` fallback 读取本地 DeepSeek 配置；历史上 CNN 首页直接 URL 分析曾因 HTML 约 4.8 MB 超过旧抓取层上限返回 `fetch_failed`，现已通过 20 MB URL 抓取上限修正；此前用 CNN 首页 excerpt 走 uploaded HTML 同构管道成功生成 analysis id `ac188acf-8342-41d0-9e32-0d5b8e753c1b`，随后 `ConversationService.create_turn()` 调用 `deepseek-v4-pro` 成功返回并保存 `CopilotTurn`，turn id `a1b2c3d4-e5f6-7890-abcd-ef1234567890`，intent `prioritize_actions`
+- CNN URL 抓取 smoke test：`PageEvidenceService.analyze_safe("https://www.cnn.com/", "zh-CN")` 当前可直接完成 URL 分析，analysis id `6a7cc810-ab9d-4756-aded-6a3aa98e46ef`，final URL `https://edition.cnn.com/`，status `completed`；当前 page type heuristic 识别为 `docs`，后续如需优化应作为页面类型判定质量问题单独处理
 - 文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/知识库架构技术开发方案.md` 均包含本轮新增知识库方案入口或核心 Method Pack 架构口径
 - DeepSeek 诊断层方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/DeepSeek诊断层模型调用边界开发方案.md` 均包含本轮新增 DeepSeek 诊断层方案入口或核心调用边界口径
 - Conversation / GEO Copilot Chat 层方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 均包含本轮新增 Conversation / GEO Copilot Chat 层方案入口或核心 ConversationSafePack / CopilotTurn 口径
 - Conversation / GEO Copilot Chat 层方案收敛验证：`rg` 已确认 `docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 均包含 `DiagnosisCompactSummary`、`PageInputSource`、`turn_user_context`、`_analyze_source` 和 `llm/settings.py` 口径
+- PageEvidence heuristic 优化方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/PageEvidence启发式规则质量优化方案.md` 均包含本轮新增方案入口、`PageHeuristicTrace` / `PageTypeCandidateScore`、防过拟合规则和 CNN / Apple / Stripe 误判样本口径
+- 前端页面与接口对接方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/前端页面与接口对接开发方案.md` 均包含方案入口、`ready-for-frontend-page-implementation`、`GEO Copilot Workbench`、当前已完成 / 未完成状态、真实后端浏览器联调和前端 smoke 口径
 
 当前测试已覆盖：
 
@@ -294,7 +322,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - 中文产品页 fixture：`Product` JSON-LD、CJK substance、相邻来源提示到数值 claim 的关联、产品页 schema 对齐
 - 中文文档页 fixture：docs page type、definition/procedure/statistic answer units、无 structured data 的 docs 规则表现
 - 中文比较页 fixture：comparison page type、comparison/definition/statistic signals、unsupported claim 与 sourced numeric claim 的规则表现
-- 真实品牌站 excerpt fixture：Shopify Plus 落地页、Ahrefs keyword research guide、Ahrefs SEO vs. SEM 文章、Moz Beginner's Guide 的 parser / geo_signals / page_content_profile / rule_checks 回归
+- 真实站点 excerpt fixture：Shopify Plus 落地页、Ahrefs keyword research guide、Ahrefs SEO vs. SEM 文章、Moz Beginner's Guide、CNN 首页、Apple iPhone 页面、Stripe Pricing、Wikipedia Artificial intelligence、CDC Diabetes Basics 的 parser / geo_signals / page_content_profile / rule_checks 回归
 - comparison table / docs how-to procedure / thin content / multi-H1 bad structure
 - RDFa article / OpenGraph-only landing / navigation-heavy low-content
 - snapshot `evidence.json` / `page_content_profile.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
@@ -341,10 +369,11 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 
 - 最小稳定公开子集已冻结，但完整 `PageContentProfile` 仍属内部对象；后续如需公开更多字段，应使用新增字段或版本化方式，避免破坏当前 contract
 - 当前 DeepSeek diagnosis 显式模型调用边界和 Conversation 后端最小闭环均已通过至少一次真实 provider smoke test；现有 smoke test 仍只代表最小样本和 CNN excerpt 样本，尚不能代表真实页面诊断 / 对话质量、限流表现或长输入稳定性
+- 用户自带 LLM provider 配置当前为进程内 override，重启 API 后会恢复 `.env` 默认配置；当前不做多用户隔离、加密落库或账号级持久化。`openai_compatible` 依赖目标服务兼容 `/chat/completions` 与 JSON object response；Anthropic 尚未适配。
 - 当前方法卡为 v0 seed，覆盖当前 P0 rule mapping；后续新增规则或方法时必须继续通过 compiler coverage 测试
 - 抓取层虽已完成一次性能优化，但当前仍缺浏览器渲染 fallback、重复分析结果缓存和更真实中文站点压力样本
 - 中文页面的产品页 / 文档页 / 比较页已进入正式 fixture 回归，但更真实的中文站点 HTML 仍不足
-- 当前真实 excerpt 已覆盖 Shopify / Ahrefs / Moz，但品牌与行业分布仍偏窄，且仍缺稳定可抓取的第二个真实产品型品牌域
+- 当前真实 excerpt 已覆盖 Shopify / Ahrefs / Moz / CNN / Apple / Stripe / Wikipedia / CDC；样本量仍不足以完成 page type heuristic 权重重调，且 CNN / Apple / Stripe 样本已暴露大型首页、消费电子产品/分类页和定价页的 page type 误判风险
 - 是否需要动态 fallback provider 仍未有样本证据支撑；如后续引入，应放在当前 fetcher/service 边界之后并保持公开 contract 不变
 
 ## 8. 下一阶段
@@ -353,7 +382,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 
 1. 使用真实或更接近真实页面 snapshot 补充 CopilotTurn fake / provider 质量样本，覆盖解释、优先级建议、草案生成和 request_evidence
 2. 扩展 Conversation validator 的资产草案与 unsupported claim 场景回归，保持 evidence_refs / method_refs fail closed
-3. 在后端样本稳定后再进入前端 Chat UI
+3. 基于已完成的前端接口 / 数据 / 功能层，继续做视觉精修、真实后端浏览器联调、前端自动化 smoke、移动端验收和 provider 错误态样本补充
 
 完成这些之前，不进入：
 

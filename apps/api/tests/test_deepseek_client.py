@@ -2,8 +2,9 @@ import json
 
 import httpx
 
-from apps.api.app.llm.deepseek_client import DeepSeekClient
+from apps.api.app.llm.deepseek_client import DeepSeekClient, build_llm_client
 from apps.api.app.llm.errors import DeepSeekAuthError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
+from apps.api.app.llm.settings import LLMProviderSettings
 
 
 def test_deepseek_client_sends_json_mode_request_without_leaking_key() -> None:
@@ -41,6 +42,44 @@ def test_deepseek_client_sends_json_mode_request_without_leaking_key() -> None:
     assert result.content == '{"geo_score":50}'
     assert result.retry_count == 0
     assert "secret-key" not in result.request_hash
+
+
+def test_openai_compatible_client_omits_deepseek_specific_fields() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "compatible-model",
+                "choices": [{"message": {"content": '{"ok":true}'}, "finish_reason": "stop"}],
+            },
+        )
+
+    client = build_llm_client(
+        LLMProviderSettings(
+            provider="openai_compatible",
+            api_key="secret-key",
+            model="compatible-model",
+            base_url="https://example.invalid",
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.create_json_completion(
+        messages=[{"role": "system", "content": "Output json."}],
+        user_id="provider_test",
+        max_tokens=64,
+    )
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert body["response_format"] == {"type": "json_object"}
+    assert body["user"] == "provider_test"
+    assert "thinking" not in body
+    assert "user_id" not in body
+    assert result.content == '{"ok":true}'
 
 
 def test_deepseek_client_does_not_retry_auth_errors() -> None:

@@ -2,7 +2,22 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Literal
 from pathlib import Path
+
+
+ProviderName = Literal["deepseek", "openai_compatible", "anthropic"]
+
+
+@dataclass(frozen=True)
+class LLMProviderSettings:
+    provider: ProviderName
+    api_key: str
+    model: str
+    base_url: str
+    timeout_seconds: float = 60.0
+    max_retries: int = 2
+    max_tokens: int = 4096
 
 
 @dataclass(frozen=True)
@@ -24,6 +39,17 @@ class DeepSeekSettings:
             timeout_seconds=float(_env_value("DEEPSEEK_TIMEOUT_SECONDS", dotenv, "60")),
             max_retries=int(_env_value("DEEPSEEK_MAX_RETRIES", dotenv, "2")),
             max_tokens=int(_env_value("DEEPSEEK_MAX_TOKENS", dotenv, "4096")),
+        )
+
+    def to_provider_settings(self) -> LLMProviderSettings:
+        return LLMProviderSettings(
+            provider="deepseek",
+            api_key=self.api_key,
+            base_url=self.base_url,
+            model=self.model,
+            timeout_seconds=self.timeout_seconds,
+            max_retries=self.max_retries,
+            max_tokens=self.max_tokens,
         )
 
 
