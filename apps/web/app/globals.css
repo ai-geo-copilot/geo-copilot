@@ -409,6 +409,7 @@ dd {
 
 /* ── Analysis Status Bar ── */
 .analysis-status-bar {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
@@ -452,6 +453,7 @@ dd {
 
 /* ── Mobile Tab Bar ── */
 .mobile-tab-bar {
+  grid-column: 1 / -1;
   display: none;
 }
 
