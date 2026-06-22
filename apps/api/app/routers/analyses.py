@@ -1,17 +1,30 @@
+from typing import Annotated
 from uuid import UUID
+import hashlib
+from pathlib import PurePath
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, HttpUrl
 
 from ..diagnosis.models import DeepSeekDiagnosis
 from ..diagnosis.service import DiagnosisService, DiagnosisServiceError
 from ..llm.errors import DeepSeekAuthError, DeepSeekBillingError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
 from ..methods.models import RetrievedMethodPack, StrategyPlan
+from ..page_input.models import PageInputContext
 from ..page_evidence.service import PageEvidenceService
 from ..page_evidence.models import AnalysisResult, PageEvidencePack, PublicPageContentProfile, RuleCheck
 from ..page_evidence.page_content_profile import build_public_page_content_profile
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
+
+UPLOAD_MAX_BYTES = 2_000_000
+UPLOAD_ALLOWED_EXTENSIONS = {".html", ".htm", ".txt", ".md"}
+UPLOAD_ALLOWED_CONTENT_TYPES = {
+    "text/html",
+    "text/plain",
+    "text/markdown",
+    "application/octet-stream",
+}
 
 def get_analysis_service(request: Request) -> PageEvidenceService:
     return request.app.state.page_evidence_service
@@ -74,7 +87,58 @@ def create_analysis(
     payload: AnalysisCreateRequest,
     service: PageEvidenceService = Depends(get_analysis_service),
 ) -> AnalysisResponse:
-    return _to_response(service.analyze_safe(str(payload.url), payload.language))
+    url = str(payload.url)
+    input_context = PageInputContext(
+        source_type="url",
+        input_url=url,
+        language=payload.language,
+        business_type=payload.business_type,
+        target_keywords=payload.target_keywords,
+    )
+    return _to_response(service.analyze_safe(url, payload.language, input_context))
+
+
+@router.post("/uploads", response_model=AnalysisResponse, status_code=status.HTTP_200_OK)
+async def create_uploaded_analysis(
+    file: Annotated[UploadFile, File()],
+    language: Annotated[str, Form(min_length=2, max_length=16)] = "zh-CN",
+    declared_url: Annotated[str | None, Form(max_length=2048)] = None,
+    business_type: Annotated[str | None, Form(max_length=80)] = None,
+    target_keywords: Annotated[list[str] | None, Form(max_length=20)] = None,
+    target_audience: Annotated[str | None, Form(max_length=160)] = None,
+    conversion_goal: Annotated[str | None, Form(max_length=160)] = None,
+    market: Annotated[str | None, Form(max_length=80)] = None,
+    brand_facts: Annotated[list[str] | None, Form(max_length=20)] = None,
+    forbidden_claims: Annotated[list[str] | None, Form(max_length=20)] = None,
+    service: PageEvidenceService = Depends(get_analysis_service),
+) -> AnalysisResponse:
+    upload_bytes = await _read_upload_bytes(file)
+    upload_sha256 = hashlib.sha256(upload_bytes).hexdigest()
+    html = _decode_upload(upload_bytes)
+    input_context = PageInputContext(
+        source_type="uploaded_html",
+        declared_url=declared_url,
+        upload_filename=file.filename,
+        upload_sha256=upload_sha256,
+        language=language,
+        business_type=business_type,
+        target_keywords=target_keywords or [],
+        target_audience=target_audience,
+        conversion_goal=conversion_goal,
+        market=market,
+        brand_facts=brand_facts or [],
+        forbidden_claims=forbidden_claims or [],
+    )
+    return _to_response(
+        service.analyze_uploaded_html(
+            html=html,
+            upload_filename=file.filename,
+            upload_sha256=upload_sha256,
+            language=language,
+            input_context=input_context,
+            declared_url=declared_url,
+        )
+    )
 
 
 @router.get("/{analysis_id}", response_model=AnalysisResponse)
@@ -86,6 +150,31 @@ def get_analysis(
     if result is None:
         raise HTTPException(status_code=404, detail="analysis not found")
     return _to_response(result)
+
+
+async def _read_upload_bytes(file: UploadFile) -> bytes:
+    filename = file.filename or ""
+    extension = PurePath(filename).suffix.lower()
+    if extension not in UPLOAD_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=422, detail="unsupported upload file extension")
+
+    content_type = (file.content_type or "").split(";", 1)[0].lower()
+    if content_type and content_type not in UPLOAD_ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=422, detail="unsupported upload content type")
+
+    data = await file.read(UPLOAD_MAX_BYTES + 1)
+    if len(data) > UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="upload file too large")
+    if not data.strip():
+        raise HTTPException(status_code=422, detail="upload file cannot be empty")
+    return data
+
+
+def _decode_upload(upload_bytes: bytes) -> str:
+    try:
+        return upload_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=422, detail="upload file must be utf-8 text") from exc
 
 
 @router.get("/{analysis_id}/methods", response_model=RetrievedMethodPack)

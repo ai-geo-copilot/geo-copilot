@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from uuid import UUID, uuid4
 
 import httpx
@@ -8,6 +9,8 @@ from apps.api.app.methods.planner import plan_strategy
 from apps.api.app.methods.selector import select_methods
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
 from apps.api.app.diagnosis.models import DeepSeekDiagnosis
+from apps.api.app.page_input.models import PageInputContext
+from apps.api.app.page_input.sources import FetchedUrlSource, PageInputSource, UploadedHtmlSource
 from apps.api.app.safe_prompt.builder import build_safe_prompt_pack
 from apps.api.app.safe_prompt.models import SafePromptPack
 
@@ -15,7 +18,7 @@ from .content_blocks import analyze_content_blocks
 from .errors import PageEvidenceError
 from .fetcher import PageFetcher
 from .geo_signals import build_geo_signals
-from .models import AnalysisResult, CrawlAccessEvidence, PageEvidencePack, StorageEvidence
+from .models import AnalysisResult, CrawlAccessEvidence, FetchedResource, FetchInfo, PageEvidencePack, StorageEvidence
 from .page_content_profile import build_page_content_profile
 from .parser import parse_html
 from .rule_checks import build_rule_checks
@@ -45,17 +48,75 @@ class PageEvidenceService:
     def storage(self) -> SnapshotStorage:
         return self._storage
 
-    def analyze(self, url: str, language: str) -> AnalysisResult:
+    def analyze(
+        self,
+        url: str,
+        language: str,
+        input_context: PageInputContext | None = None,
+    ) -> AnalysisResult:
         analysis_id = uuid4()
+        input_context = input_context or PageInputContext(source_type="url", input_url=url, language=language)
         normalized_url = self._fetcher.validate_public_url(url)
         fetched = self._fetcher.fetch_html(normalized_url)
-        parsed = parse_html(fetched.html, fetched.fetch_info.final_url)
+        source = FetchedUrlSource(
+            input_url=url,
+            normalized_url=normalized_url,
+            html=fetched.html,
+            fetch_info=fetched.fetch_info,
+        )
+        return self._analyze_source(analysis_id, source, language, input_context)
+
+    def analyze_uploaded_html(
+        self,
+        *,
+        html: str,
+        upload_filename: str | None,
+        upload_sha256: str,
+        language: str,
+        input_context: PageInputContext,
+        declared_url: str | None = None,
+    ) -> AnalysisResult:
+        analysis_id = uuid4()
+        source = UploadedHtmlSource(
+            declared_url=declared_url,
+            upload_filename=upload_filename,
+            upload_sha256=upload_sha256,
+            html=html,
+        )
+        return self._analyze_source(analysis_id, source, language, input_context)
+
+    def _analyze_source(
+        self,
+        analysis_id: UUID,
+        source: PageInputSource,
+        language: str,
+        input_context: PageInputContext,
+    ) -> AnalysisResult:
+        html = source.html
+        if source.source_type == "url":
+            input_url = source.input_url
+            normalized_url = source.normalized_url
+            fetch_info = source.fetch_info
+            crawl_access = self._build_crawl_access(source.fetch_info.final_url)
+        elif source.source_type == "uploaded_html":
+            input_url = source.declared_url or f"uploaded:{source.upload_sha256}"
+            normalized_url = input_url
+            fetch_info = self._build_uploaded_fetch_info(
+                html=html,
+                final_url=input_url,
+                upload_sha256=source.upload_sha256,
+            )
+            crawl_access = self._build_uploaded_crawl_access(input_url)
+        else:
+            raise NotImplementedError("Only URL and uploaded HTML page input sources are supported.")
+
+        parsed = parse_html(html, fetch_info.final_url)
         content_metrics = analyze_content_blocks(parsed.content_blocks, parsed.structure)
         rule_check_inputs = content_metrics.to_rule_check_inputs(parsed.structured_data).model_copy(
             update={"heading_count": len(parsed.structure.headings)}
         )
         geo_signals = build_geo_signals(
-            base_url=fetched.fetch_info.final_url,
+            base_url=fetch_info.final_url,
             metadata=parsed.metadata,
             structure=parsed.structure,
             content_blocks=parsed.content_blocks,
@@ -65,11 +126,11 @@ class PageEvidenceService:
         )
 
         pack = PageEvidencePack(
-            input_url=url,
+            input_url=input_url,
             normalized_url=normalized_url,
-            fetch=fetched.fetch_info,
+            fetch=fetch_info,
             metadata=parsed.metadata,
-            crawl_access=self._build_crawl_access(fetched.fetch_info.final_url),
+            crawl_access=crawl_access,
             structure=parsed.structure,
             structured_data=parsed.structured_data,
             content_blocks=parsed.content_blocks,
@@ -87,7 +148,7 @@ class PageEvidenceService:
         pack.storage.snapshot_dir = snapshot_dir
         result = AnalysisResult(
             id=analysis_id,
-            input_url=url,
+            input_url=input_url,
             status="completed",
             language=language,
             page_evidence=pack,
@@ -97,7 +158,7 @@ class PageEvidenceService:
         )
         self._storage.save(
             analysis_id,
-            fetched.html,
+            html,
             parsed.clean_markdown,
             pack,
             profile,
@@ -106,8 +167,36 @@ class PageEvidenceService:
             retrieved_methods,
             strategy_plan,
             safe_prompt_pack,
+            input_context,
         )
         return result
+
+    def _build_uploaded_fetch_info(self, *, html: str, final_url: str, upload_sha256: str) -> FetchInfo:
+        return FetchInfo(
+            final_url=final_url,
+            status_code=200,
+            content_type="text/html; charset=utf-8",
+            elapsed_ms=0,
+            html_sha256=hashlib.sha256(html.encode("utf-8")).hexdigest() or upload_sha256,
+            redirect_chain=[],
+        )
+
+    def _build_uploaded_crawl_access(self, page_url: str) -> CrawlAccessEvidence:
+        return CrawlAccessEvidence(
+            robots_txt=self._uploaded_resource(page_url, "crawl_access.robots_txt"),
+            sitemap_xml=self._uploaded_resource(page_url, "crawl_access.sitemap_xml"),
+            llms_txt=self._uploaded_resource(page_url, "crawl_access.llms_txt"),
+            llms_full_txt=self._uploaded_resource(page_url, "crawl_access.llms_full_txt"),
+        )
+
+    def _uploaded_resource(self, page_url: str, evidence_ref: str) -> FetchedResource:
+        return FetchedResource(
+            url=page_url,
+            reachable=False,
+            status="request_failed",
+            error_code="uploaded_page_no_external_fetch",
+            evidence_ref=evidence_ref,
+        )
 
     def _build_crawl_access(self, page_url: str) -> CrawlAccessEvidence:
         fetched_resources = self._fetcher.fetch_auxiliary_bundle(
@@ -126,9 +215,14 @@ class PageEvidenceService:
             llms_full_txt=fetched_resources["crawl_access.llms_full_txt"],
         )
 
-    def analyze_safe(self, url: str, language: str) -> AnalysisResult:
+    def analyze_safe(
+        self,
+        url: str,
+        language: str,
+        input_context: PageInputContext | None = None,
+    ) -> AnalysisResult:
         try:
-            return self.analyze(url, language)
+            return self.analyze(url, language, input_context)
         except PageEvidenceError as exc:
             return AnalysisResult(
                 id=uuid4(),
@@ -149,6 +243,9 @@ class PageEvidenceService:
 
     def get_safe_prompt_pack(self, analysis_id: UUID) -> SafePromptPack | None:
         return self._storage.load_safe_prompt_pack(analysis_id)
+
+    def get_input_context(self, analysis_id: UUID) -> PageInputContext | None:
+        return self._storage.load_input_context(analysis_id)
 
     def save_deepseek_diagnosis(
         self,

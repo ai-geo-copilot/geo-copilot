@@ -24,7 +24,8 @@
 - “DeepSeek 识别用户上传页面”应理解为：后端先把 URL 或上传页面转换为可信的页面证据对象，DeepSeek 只基于安全上下文解释、追问、生成草案和个性化反馈。
 - Chat 层必须绑定 `analysis_id`，默认复用已保存 snapshot，不重新抓取页面，不重新判定规则，不直接读取 raw HTML。
 - 个性化只来自用户显式提供的业务上下文，例如行业、目标关键词、受众、转化目标、品牌事实和禁止编造的边界。
-- v0 先做后端对话闭环和最小 UI，避免先上完整前端报告页、RAG、用户系统或向量数据库。
+- v0 的正确顺序是先保存 `PageInputContext`，再抽出同构 `PageInputSource` 分析管道，然后支持上传页面，最后实现对话回合；避免先上完整前端报告页、RAG、用户系统或向量数据库。
+- Conversation v0 不默认把完整 `DeepSeekDiagnosis` 塞进每轮 prompt；如已有诊断，只压缩为 `DiagnosisCompactSummary` 作为可选上下文。没有诊断时，也应能基于 `SafePromptPack` 完成解释、优先级建议和证据请求。
 - 前端建议优先借鉴或引入 `assistant-ui` 的 React chat primitives；后端继续使用本项目现有 FastAPI、Pydantic、SnapshotStorage、DeepSeekClient 和 validator 风格。
 
 ## 2. 输入依据
@@ -35,6 +36,7 @@
 - `docs/README.md`
 - `docs/模块开发补充/知识库架构技术开发方案.md`
 - `docs/模块开发补充/DeepSeek诊断层模型调用边界开发方案.md`
+- `docs/开发过程中定义文件/项目分析与开发方案.md`
 - `apps/api/app/routers/analyses.py`
 - `apps/api/app/page_evidence/models.py`
 - `apps/api/app/page_evidence/storage.py`
@@ -141,7 +143,6 @@ apps/api/app/conversations/
 - `SnapshotStorage`
 - `SafePromptPack`
 - `DeepSeekClient`
-- `DeepSeekSettings`
 - `DeepSeekDiagnosis`
 - `RetrievedMethodPack`
 - `StrategyPlan`
@@ -154,6 +155,14 @@ apps/api/app/conversations/
 1. 读取已完成的 analysis snapshot。
 2. 为单次用户追问构建 `ConversationSafePack`。
 3. 调用 DeepSeek 并校验 `CopilotTurn` 输出。
+
+为避免 Diagnosis 和 Conversation 两套模型调用配置漂移，后续应把当前 `DiagnosisService` 内部的 DeepSeek 环境配置抽出到共享 provider settings：
+
+```text
+apps/api/app/llm/settings.py
+```
+
+该文件只承载 provider、base URL、model、timeout、retry、max tokens 等配置，不理解 GEO 业务。
 
 ### 5.3 上传页面
 
@@ -180,6 +189,16 @@ v0 不建议支持：
 - 外部资源自动下载
 - 让 DeepSeek 直接读取 raw upload
 
+实现上传前必须先把 `PageEvidenceService` 中的 URL 专用流程收敛成内部同构管道，例如：
+
+```text
+PageInputSource
+-> PageEvidenceService._analyze_source()
+-> parser / geo_signals / profile / rule_checks / methods / strategy / safe_prompt / snapshot
+```
+
+URL、上传 HTML、粘贴 HTML 只是不同 `PageInputSource`，不能复制一套分析主链路。
+
 ## 6. 总体架构
 
 ```mermaid
@@ -191,9 +210,12 @@ flowchart TD
     E --> F["MethodSelector v0"]
     F --> G["StrategyPlan"]
     G --> H["SafePromptPack"]
-    H --> I["DeepSeekDiagnosis"]
-    I --> J["ConversationSafePack"]
+    H --> J["ConversationSafePack"]
+    H --> I["DeepSeekDiagnosis\noptional explicit generation"]
+    I --> R["DiagnosisCompactSummary\noptional"]
+    R -.-> J
     K["User message + explicit business context"] --> J
+    Q["Conversation history\nrecent turns + summary"] --> J
     J --> L["DeepSeek Copilot Prompt"]
     L --> M["CopilotTurn JSON"]
     M --> N["CopilotTurn Validator"]
@@ -274,7 +296,44 @@ class PageInputContext(BaseModel):
 data/analyses/{analysis_id}/input_context.json
 ```
 
-### 8.2 ConversationSafePack
+### 8.2 DiagnosisCompactSummary
+
+对话层不应默认携带完整 `DeepSeekDiagnosis`。如果已生成诊断，v0 应先压缩为只保留可追溯摘要的 `DiagnosisCompactSummary`：
+
+```python
+class CompactIssue(BaseModel):
+    issue_id: str
+    title: str
+    severity: Literal["low", "medium", "high", "critical"]
+    evidence_refs: list[str]
+    method_refs: list[str]
+
+
+class CompactAction(BaseModel):
+    action_id: str
+    title: str
+    priority: Literal["P0", "P1", "P2"]
+    evidence_refs: list[str]
+    method_refs: list[str]
+    expected_artifacts: list[str] = Field(default_factory=list)
+
+
+class DiagnosisCompactSummary(BaseModel):
+    summary_version: Literal["diagnosis-compact-summary-v0"] = "diagnosis-compact-summary-v0"
+    diagnosis_version: str
+    geo_score: int | None = None
+    top_issues: list[CompactIssue] = Field(default_factory=list, max_length=5)
+    top_actions: list[CompactAction] = Field(default_factory=list, max_length=5)
+    known_unknowns: list[str] = Field(default_factory=list, max_length=5)
+```
+
+原则：
+
+- `SafePromptPack` 仍是 Conversation 的基础事实输入。
+- `DiagnosisCompactSummary` 只是可选摘要，不是 Chat 层前置条件。
+- compact summary 不新增事实，只保留已通过 `DeepSeekDiagnosis` validator 的 issue / action / unknown 摘要。
+
+### 8.3 ConversationSafePack
 
 这是 DeepSeek Chat 回合唯一业务输入。
 
@@ -284,7 +343,7 @@ class ConversationSafePack(BaseModel):
     analysis_id: UUID
     input_context: PageInputContext
     safe_prompt_pack: SafePromptPack
-    diagnosis_summary: DeepSeekDiagnosis | None = None
+    diagnosis_summary: DiagnosisCompactSummary | None = None
     conversation_summary: str | None = None
     recent_messages: list[ConversationMessage]
     user_message: str
@@ -297,11 +356,11 @@ class ConversationSafePack(BaseModel):
 
 注意：
 
-- `diagnosis_summary` 可以先传完整 `DeepSeekDiagnosis`，后续如果 token 压力变大，再改为 `DiagnosisCompactSummary`。
+- `diagnosis_summary` 只允许使用 `DiagnosisCompactSummary`，不直接传完整 `DeepSeekDiagnosis`。
 - `recent_messages` 默认保留最近 6-10 条，并配合 `conversation_summary`。
 - 用户消息本身也视为不可信输入，不允许覆盖系统规则。
 
-### 8.3 CopilotTurn
+### 8.4 CopilotTurn
 
 DeepSeek 输出不应只是 `answer: str`，而应是可校验 JSON：
 
@@ -333,7 +392,7 @@ class CopilotTurn(BaseModel):
     validator_warnings: list[str] = Field(default_factory=list)
 ```
 
-### 8.4 CopilotAssetDraft
+### 8.5 CopilotAssetDraft
 
 资产草案必须保留边界：
 
@@ -427,7 +486,7 @@ POST /api/analyses/{analysis_id}/messages
 {
   "message": "我是 B2B SaaS，目标词是 AI sales assistant，先改哪里？",
   "intent": "auto",
-  "user_context": {
+  "turn_user_context": {
     "business_type": "b2b_saas",
     "target_keywords": ["AI sales assistant"],
     "target_audience": "中小型销售团队",
@@ -436,6 +495,8 @@ POST /api/analyses/{analysis_id}/messages
   }
 }
 ```
+
+`turn_user_context` 只影响当前回合，不自动写回 `input_context.json`。如果后续需要把某些上下文固化为页面级输入，应提供显式更新接口，而不是从聊天内容中静默学习。
 
 响应：
 
@@ -581,11 +642,16 @@ apps/api/app/conversations/validator.py
 data/analyses/{analysis_id}/
   input_context.json
   conversations/
-    default_conversation.json
-    turns/
-      {turn_id}.json
-      {turn_id}.meta.json
-    conversation_summary.json
+    default/
+      conversation.json
+      summary.json
+      turns/
+        000001_user.json
+        000001_assistant.json
+        000001_assistant.meta.json
+        000002_user.json
+        000002_assistant.json
+        000002_assistant.meta.json
 ```
 
 v0 不强制数据库。理由：
@@ -593,6 +659,13 @@ v0 不强制数据库。理由：
 - 当前主链路已采用文件 snapshot。
 - Chat 层初期仍绑定单 URL / 单上传页面。
 - JSON snapshot 便于测试、回归和人工检查。
+
+写入要求：
+
+- 每个 user / assistant turn 单独保存，`conversation.json` 只保存索引、计数、创建时间和更新时间。
+- assistant turn 必须先通过 `CopilotTurn` model 与业务 validator，再写入正式 turn 文件。
+- 写文件使用临时文件 + 原子 rename，避免模型调用失败或进程中断时破坏已有历史。
+- v0 默认只有 `default` conversation；多 conversation 只能在有明确产品需求后再扩展。
 
 迁移数据库触发条件：
 
@@ -612,10 +685,20 @@ v0 不强制数据库。理由：
 | 受众市场 | `target_audience`、`market`、`language` | 决定解释粒度和地区表达 |
 | 事实边界 | `brand_facts`、`forbidden_claims` | 防止模型编造或越界 |
 
+上下文来源必须分层：
+
+| 层级 | 保存位置 | 生命周期 | 规则 |
+|---|---|---|---|
+| `input_context` | `input_context.json` | analysis 级 | 创建分析时提交，默认参与后续所有对话 |
+| `turn_user_context` | 当前 message request / turn snapshot | 单回合 | 只影响当前回答，不自动固化 |
+| `brand_facts` | 显式字段 | analysis 或单回合 | 可用于草案表达，但不是页面已验证事实 |
+| 页面事实 | `PageEvidencePack` / `SafePromptPack` | analysis 级 | 必须绑定 `evidence_ref` |
+
 禁止：
 
 - 不做跨 analysis 的长期记忆。
 - 不从聊天里静默学习用户偏好。
+- 不把 `turn_user_context` 自动写回 `input_context.json`。
 - 不把用户输入的品牌卖点当作已证实页面事实，除非用户明确标记为 `brand_facts`。
 - 不把 `target_keywords` 当作页面已经覆盖的关键词。
 
@@ -633,9 +716,13 @@ v0 不强制数据库。理由：
 ### 13.1 后端
 
 ```text
+apps/api/app/llm/
+  settings.py
+
 apps/api/app/page_input/
   __init__.py
   models.py
+  sources.py
   upload_provider.py
   service.py
 
@@ -653,7 +740,9 @@ apps/api/app/routers/
 
 说明：
 
+- `llm/settings.py` 只提供 provider 配置，供 Diagnosis 与 Conversation 共用。
 - `page_input` 只处理输入来源，不改 `page_evidence` 的核心对象语义。
+- `sources.py` 定义 URL / uploaded HTML / pasted HTML 的 `PageInputSource`，让 `PageEvidenceService` 复用同一条 `_analyze_source()` 管道。
 - `conversations` 不重新实现 DeepSeek client，只复用 `apps/api/app/llm/deepseek_client.py`。
 - `analyses.py` 可继续承载 URL / diagnosis / messages 路由，后续变大再拆路由。
 
@@ -699,7 +788,27 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 - `business_type` / `target_keywords` 不影响 PageEvidencePack contract。
 - 现有 `AnalysisResponse` 不新增字段。
 
-### Phase 2：上传 HTML 页面分析
+### Phase 2：同构 PageInputSource 分析管道
+
+目标：
+
+- 为 URL、上传 HTML、粘贴 HTML 复用同一条分析主链路，避免复制 `PageEvidenceService.analyze()` 的 parse / profile / rules / methods / strategy / safe prompt / snapshot 逻辑。
+
+开发项：
+
+- 新增 `PageInputSource` 抽象或 Pydantic union。
+- 新增 `FetchedUrlSource`、`UploadedHtmlSource`、`PastedHtmlSource`。
+- 在 `PageEvidenceService` 内部抽出 `_analyze_source(source, language, input_context)`。
+- 保持 `analyze_safe()` 和当前 URL API 行为不变。
+
+验收：
+
+- 现有 URL 分析测试不回归。
+- `POST /api/analyses` 的公开响应 contract 不变。
+- snapshot 仍包含当前已冻结的文件产物。
+- `_analyze_source()` 不读取 DeepSeek，不依赖上传接口。
+
+### Phase 3：上传 HTML 页面分析
 
 目标：
 
@@ -718,7 +827,7 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 - raw upload 不进入 DeepSeek prompt。
 - 超大文件、非文本文件、空文件都有错误测试。
 
-### Phase 3：ConversationSafePack + CopilotTurn
+### Phase 4：共享 LLM settings + ConversationSafePack + CopilotTurn
 
 目标：
 
@@ -726,8 +835,10 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 
 开发项：
 
+- 新增 `apps/api/app/llm/settings.py`，让 Diagnosis 与 Conversation 共用 provider 配置。
 - 新增 conversations models/context/prompt/validator/service。
 - 复用 `DeepSeekClient.create_json_completion()`。
+- 如存在 `deepseek_diagnosis.json`，先压缩为 `DiagnosisCompactSummary`。
 - 保存 turn JSON 和 meta。
 
 验收：
@@ -736,8 +847,9 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 - 未知 `evidence_ref` / `method_ref` -> validator 拒绝。
 - 用户要求编造 claim -> 输出 unknown 或 validator 拒绝。
 - 缺 safe prompt / analysis 不存在 -> 明确错误。
+- 没有 `deepseek_diagnosis.json` 时，仍可基于 `safe_prompt_pack.json` 回答解释类问题。
 
-### Phase 4：前端 Chat UI
+### Phase 5：前端 Chat UI
 
 目标：
 
@@ -758,7 +870,7 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 - 能追问并得到带 refs 的回答。
 - 移动端和桌面端文本不溢出、不遮挡。
 
-### Phase 5：流式响应和可操作 Copilot
+### Phase 6：流式响应和可操作 Copilot
 
 触发条件：
 
@@ -782,6 +894,8 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 ### Page input tests
 
 - URL 分析仍不回归。
+- `input_context.json` 保存 `business_type`、`target_keywords` 和 source type。
+- `PageEvidenceService._analyze_source()` 产出与 URL 分析兼容的 snapshot。
 - HTML 上传生成 snapshot。
 - 上传内容 hash 稳定。
 - 非 HTML / 超大文件被拒绝。
@@ -791,6 +905,9 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 
 - `ConversationSafePack` 只引用 snapshot 中已有安全产物。
 - `known_evidence_refs` 覆盖 safe excerpts、rule checks、methods 和 strategy refs。
+- `DeepSeekDiagnosis` 只通过 `DiagnosisCompactSummary` 进入对话上下文。
+- 缺少 diagnosis 时仍可构造基础 `ConversationSafePack`。
+- `turn_user_context` 不会自动写回 `input_context.json`。
 - recent messages 截断稳定。
 - conversation summary 不覆盖系统约束。
 
@@ -834,6 +951,9 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 | DeepSeek 直接读取上传页面导致 prompt injection | 上传页面先入 PageEvidence pipeline，只传 safe pack |
 | 个性化导致编造业务事实 | `brand_facts` 和页面 evidence 分离，validator 强制 refs |
 | 前端引入完整平台拖慢开发 | 优先 `assistant-ui` primitives，不 fork 大平台 |
+| 每轮携带完整 diagnosis 造成 prompt 膨胀 | 只允许 `DiagnosisCompactSummary` 进入 ConversationSafePack |
+| 上传分析复制 URL 主链路导致行为分叉 | 先抽 `PageInputSource -> _analyze_source()`，再做上传接口 |
+| 模型失败污染会话历史 | turn 单文件保存，先校验再原子写入 |
 | 非流式体验不够像 Chat | v0 先保证正确性，v1 再加 SSE |
 | JSON snapshot 后续难扩展 | 到多用户/多会话/搜索需求时再迁移数据库 |
 | 资产草案不可验证 | 每个 asset draft 必须有 evidence_refs、method_refs、unknown_fields、guardrails |
@@ -843,14 +963,19 @@ v0 UI 第一屏应该是实际工具，而不是营销页：
 下一轮编码建议只做以下闭环：
 
 1. 新增 `PageInputContext`，保存 URL 分析时的 `business_type` 和 `target_keywords`。
-2. 新增 `ConversationSafePack`、`CopilotTurn`、`CopilotAssetDraft` models。
-3. 新增 `ConversationPromptBuilder`，只消费 `ConversationSafePack`。
-4. 新增 `validate_copilot_turn()`。
-5. 把现有 `POST /api/analyses/{analysis_id}/messages` 从占位实现改为 DeepSeek JSON 回合。
-6. 保存 `data/analyses/{analysis_id}/conversations/...`。
-7. 使用 fake DeepSeek client 写 service / API tests。
-8. 保持基础 `AnalysisResponse` 不变。
-9. HTML 上传接口作为第二个小闭环，不和 Chat validator 混在一个大 PR 里做。
+2. 把 `AnalysisCreateRequest` 的上下文字段传入 service，并写入 `input_context.json`。
+3. 为 `SnapshotStorage` 增加 `save_input_context()` / `load_input_context()`。
+4. 增加测试证明 `POST /api/analyses` 会保存 input context，且基础 `AnalysisResponse` 不新增字段。
+5. 保持 `PageEvidencePack`、`PageContentProfile`、`RuleChecks`、Methods、Strategy、Diagnosis contract 不变。
+6. 不在同一任务里做上传、Conversation、前端、数据库、RAG 或流式。
+
+第二个小闭环再做：
+
+1. 抽出 `PageInputSource` 与 `PageEvidenceService._analyze_source()`。
+2. 让现有 URL 分析走同一条内部 source 管道。
+3. 增加回归测试证明当前 URL 分析输出和 snapshot 不变。
+
+第三个小闭环再做上传 HTML；第四个小闭环再做非流式 Conversation 后端。
 
 ## 18. 一句话原则
 

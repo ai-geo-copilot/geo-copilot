@@ -21,14 +21,14 @@
 当前阶段：
 
 > HTTP / Page Evidence v1 已完成最终冻结验收。
-> 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + MethodSelector v0 + Strategy Planner v0 + Methods / Strategy read-only API + Safe Prompt Pack v0 + DeepSeek diagnosis output schema/validator + DeepSeek Diagnosis 显式模型调用边界 + snapshot + API base report + minimal public PageContentProfile subset`。
+> 当前主链路已完成 `PageEvidencePack v1 + extraction + geo_signals + RuleChecks v1 P0 + MethodSelector v0 + Strategy Planner v0 + Methods / Strategy read-only API + Safe Prompt Pack v0 + DeepSeek diagnosis output schema/validator + DeepSeek Diagnosis 显式模型调用边界 + PageInputContext v0 + PageInputSource URL / uploaded HTML 管道 + Uploaded Page Intake v0 + snapshot + API base report + minimal public PageContentProfile subset`。
 > 当前已补齐 `rdfa`、`opengraph-only`、`navigation-heavy`、`cjk-product`、`cjk-docs`、`cjk-comparison` 六类 synthetic fixture 覆盖，并新增 Shopify / Ahrefs / Moz 的真实 HTML excerpt fixture；当前公开 API 已冻结 `page_content_profile` 最小稳定子集，完整 `PageContentProfile` 继续保留在 service 内部结果、snapshot 和 `analysis.json` 中。本轮已完成一次抓取层性能优化，HTTP 层后续只接受不破坏 contract 的回归修复和实现增强。
 
 ## 3. 当前优先级
 
-1. DeepSeek Diagnosis 显式模型调用边界已完成，并已用 `deepseek-v4-pro` 做过一次真实 provider smoke test；后续只接受不改变基础 `AnalysisResponse` 的诊断层增强和回归修复
-2. 继续保持 `apps/api/app/page_evidence` 的冻结状态，仅接受回归修复和兼容性维护
-3. 如需接入其他抓取 provider 或继续做性能增强，必须保持已冻结公开 contract 不变
+1. Conversation / GEO Copilot Chat 层按补充方案推进；当前已完成 Phase 1 `PageInputContext` 保存、Phase 2 `PageInputSource -> PageEvidenceService._analyze_source()` URL 同构分析管道和 Phase 3 上传 HTML 页面分析；下一步进入 Phase 4 非流式 Chat 后端最小闭环
+2. DeepSeek Diagnosis 显式模型调用边界已完成，并已用 `deepseek-v4-pro` 做过一次真实 provider smoke test；后续只接受不改变基础 `AnalysisResponse` 的诊断层增强和回归修复
+3. 继续保持已冻结公开 contract 不变；`apps/api/app/page_evidence` 只接受服务于同构输入管道的兼容性内部调整、回归修复和不破坏 contract 的实现增强
 
 明确不优先：
 
@@ -44,6 +44,7 @@
 已完成：
 
 - `POST /api/analyses` 已接入同步单 URL 分析闭环
+- `POST /api/analyses/uploads` 已接入同步上传 HTML / 文本页面分析闭环
 - `GET /api/analyses/{analysis_id}/methods` 已可只读返回 snapshot 中的 `RetrievedMethodPack`
 - `GET /api/analyses/{analysis_id}/strategy` 已可只读返回 snapshot 中的 `StrategyPlan`
 - 当前分析结果以文件快照持久化
@@ -95,6 +96,11 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - `apps/api/app/diagnosis/prompt.py`
 - `apps/api/app/diagnosis/service.py`
 
+Page Input 模块已实现目录：
+
+- `apps/api/app/page_input/models.py`
+- `apps/api/app/page_input/sources.py`
+
 ### 4.3 当前能力
 
 已验证能力：
@@ -109,7 +115,7 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - GEO-ready signals：已输出 `page_type_hint`、`primary_entity_candidates`、`content_outline`、`answer_unit_candidates`、`claim_candidates`、`evidence_candidates`、`statistics`、`structured_data_profile`、`boilerplate_metrics`、`safety_flags`
 - PageContentProfile v1 minimal read model：已可从 `PageEvidencePack` 构建 `page_type`、entity/outline/answer units、claim/evidence/statistics、schema/boilerplate、安全风险、`selection_readiness`、`absorption_readiness`、`content_gaps`
 - RuleChecks v1 P0：已覆盖 selection、absorption、claim-evidence、structure、schema、safety 六类基础规则，并为每条规则输出 `failure_type`；当前直接消费由 service 构建的 `PageContentProfile` readiness 信号
-- Snapshot：已落盘 `raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`retrieved_methods.json`、`strategy_plan.json`、`safe_prompt_pack.json`、`analysis.json`；DeepSeek Diagnosis 显式生成成功后会额外落盘 `deepseek_diagnosis.json` 和 `deepseek_diagnosis_meta.json`
+- Snapshot：已落盘 `input_context.json`、`raw.html`、`clean.md`、`evidence.json`、`page_content_profile.json`、`rule_checks.json`、`retrieved_methods.json`、`strategy_plan.json`、`safe_prompt_pack.json`、`analysis.json`；DeepSeek Diagnosis 显式生成成功后会额外落盘 `deepseek_diagnosis.json` 和 `deepseek_diagnosis_meta.json`
 - Method Pack Compiler v0：已从 seed JSON 编译 `CompiledMethodPack`，覆盖 12 张方法卡、18 条当前 P0 RuleChecks binding 和 6 个 strategy group；compiler 对缺失 P0 rule binding、未知 method、未知 strategy group、缺 guardrails、缺 expected artifacts 执行 fail closed
 - MethodSelector v0：已基于完整内部 `PageContentProfile`、`RuleCheck.status/failure_type/evidence_refs` 和 compiled method pack 做 deterministic 选择；只消费 failed / warning 规则，输出 `RetrievedMethodPack`，包含 `selection_mode=deterministic_v0`、query rule 列表、matched rule/failure/evidence refs、strategy group、expected artifacts、guardrails、score 和 `why_selected`
 - Strategy Planner v0：已把 selected methods 按 strategy group rank 归组排序，安全组置顶，输出 `StrategyPlan` steps，并保留 method/rule/failure/evidence refs、expected artifacts 和 validator requirements
@@ -126,6 +132,9 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - `geo_signals.statistics` 已支持对相邻内容块中的来源提示做确定性关联，数值 claim 不再只依赖“同段来源”识别
 - `geo_signals` 的 claim heuristic 已补充中文“领先”识别，中文比较页中的 unsupported claim 可被稳定纳入 `content_gaps` 与 `RuleChecks`
 - `POST /api/analyses` 与 `GET /api/analyses/{analysis_id}` 的公开响应当前已冻结为 `page_evidence + page_content_profile(minimal public subset) + rule_checks + snapshot_dir`
+- `POST /api/analyses` 当前会把 `business_type` 与 `target_keywords` 写入 `PageInputContext` 并保存到 `input_context.json`；该上下文不进入公开 `AnalysisResponse`，不改变 `PageEvidencePack` / `PageContentProfile` / `RuleChecks` contract
+- 当前 URL 分析已抽出 `FetchedUrlSource -> PageEvidenceService._analyze_source()` 内部同构管道；URL 抓取仍由 `PageFetcher` 执行，解析、profile、rules、methods、strategy、safe prompt 和 snapshot 落盘统一在 `_analyze_source()` 内完成；公开 `AnalysisResponse` contract 不变
+- `POST /api/analyses/uploads` 当前支持单个 `.html` / `.htm` / `.txt` / `.md` UTF-8 文本文件，默认 2 MB 上限；上传页面会进入 `UploadedHtmlSource -> PageEvidenceService._analyze_source()` 管道，生成同构 `AnalysisResponse` 和 snapshot，不执行脚本、不下载外部资源、不把 script 内容写入 `safe_prompt_pack.json`
 - 公开 `page_content_profile` 当前只暴露稳定摘要字段：`profile_version`、`page_type`、`page_type_evidence_refs`、`primary_entity`、`selection_readiness`、`absorption_readiness`、`prompt_injection_risk`、`structured_data`
 - 完整 `PageContentProfile` 继续只保留在 service 内部结果、snapshot 和 `analysis.json` 中，不作为公开 API 的全量 profile 返回
 - `PageEvidencePack` 与 `PageContentProfile` 的 contract schema 已分别有模型对齐测试，字段冻结将直接受测试保护
@@ -196,6 +205,7 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - `docs/README.md` 已把该 DeepSeek 诊断层补充文档加入正式阅读入口。
 - `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 已新增，用作用户 URL / 上传页面后的 Conversation / GEO Copilot Chat 层、个性化上下文、ConversationSafePack、CopilotTurn、validator 和前端 Chat UI 选型方案。
 - `docs/README.md` 已把该 Conversation / GEO Copilot Chat 层补充文档加入正式阅读入口。
+- `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 已根据 `docs/开发过程中定义文件/项目分析与开发方案.md` 的讨论输入完成一次方案收敛：Conversation v0 改为优先落地 `PageInputContext`，再抽出 `PageInputSource -> PageEvidenceService._analyze_source()` 同构分析管道，然后做上传页面与非流式对话；诊断上下文改为可选 `DiagnosisCompactSummary`，不再建议每轮对话传完整 `DeepSeekDiagnosis`。
 
 当前文档口径：
 
@@ -208,7 +218,7 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - `docs/后期开发/http层·遗漏.md` 只记录后期迭代升级内容，不作为当前 MethodSelector v0 前置条件。
 - 知识库架构当前正式口径是 `Research KB -> Method Pack Compiler -> Runtime Method Selector -> Strategy Planner -> Safe Prompt Pack -> DeepSeek Diagnosis -> Validator`；当前已完成 deterministic `MethodSelector v0`、`Strategy Planner v0`、只读 Methods / Strategy API、Safe Prompt Pack v0、DeepSeek diagnosis 输出 validator 和 DeepSeek Diagnosis 显式调用边界，不把 RAGFlow / Dify / Qdrant / LlamaIndex 作为前置依赖。
 - DeepSeek 诊断层当前已按正式方案实现显式后置模型调用边界：`safe_prompt_pack.json -> Diagnosis Prompt Builder -> DeepSeek Client -> JSON parse -> DeepSeekDiagnosis model validation -> validate_deepseek_diagnosis() -> deepseek_diagnosis.json -> read-only diagnosis API`；实现不把 DeepSeek 默认接入基础 `POST /api/analyses`，不改变已冻结 `AnalysisResponse`，并且只消费 Safe Prompt Pack。
-- Conversation / GEO Copilot Chat 层当前正式口径是 `用户 URL / 上传页面 -> PageEvidencePack -> SafePromptPack / DeepSeekDiagnosis -> ConversationSafePack -> DeepSeek Copilot Turn -> CopilotTurn validator -> 对话 snapshot`；该层目前只有方案文档和现有 `POST /api/analyses/{analysis_id}/messages` 占位接口，尚未实现正式对话生成。后续实现不得让 DeepSeek 直接读取 raw HTML、完整 clean markdown 或未经裁剪的上传页面内容，不得改变已冻结基础 `AnalysisResponse`。
+- Conversation / GEO Copilot Chat 层当前正式口径是 `用户 URL / 上传页面 -> PageInputContext -> PageInputSource -> PageEvidencePack -> SafePromptPack -> ConversationSafePack -> DeepSeek Copilot Turn -> CopilotTurn validator -> 对话 snapshot`；`DeepSeekDiagnosis` 只作为可选输入，经 `DiagnosisCompactSummary` 压缩后进入 ConversationSafePack，不作为对话层硬依赖。该层目前只有方案文档和现有 `POST /api/analyses/{analysis_id}/messages` 占位接口，尚未实现正式对话生成。后续实现不得让 DeepSeek 直接读取 raw HTML、完整 clean markdown 或未经裁剪的上传页面内容，不得改变已冻结基础 `AnalysisResponse`。
 
 ## 5. 当前边界
 
@@ -216,7 +226,7 @@ DeepSeek Diagnosis 调用边界已实现目录：
 
 - `PageContentProfile v1` 完整对象的全量对外字段口径最终冻结
 - 更真实页面 snapshot 下的 DeepSeek diagnosis 质量样本
-- Conversation / GEO Copilot Chat 层正式实现，包括上传 HTML 页面分析、ConversationSafePack、CopilotTurn validator、消息 snapshot 和前端 Chat UI
+- Conversation / GEO Copilot Chat 层正式实现：尚未实现 ConversationSafePack、CopilotTurn validator、消息 snapshot 和前端 Chat UI
 
 当前实现边界：
 
@@ -243,15 +253,17 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - `rg -n "DeepSeek诊断层模型调用边界开发方案|POST /api/analyses/\{analysis_id\}/diagnosis|safe_prompt_pack.json|DeepSeekDiagnosis" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\DeepSeek诊断层模型调用边界开发方案.md'`
 - `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
 - `rg -n "Conversation与GEOCopilotChat层开发方案|ConversationSafePack|CopilotTurn|assistant-ui|POST /api/analyses/\{analysis_id\}/messages" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
+- `rg -n "DiagnosisCompactSummary|PageInputSource|turn_user_context|_analyze_source|llm/settings.py" 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\Conversation与GEOCopilotChat层开发方案.md'`
 
 最新验证结果：
 
-- `pytest`：74 passed
+- `pytest`：79 passed
 - `compileall`：通过
 - DeepSeek provider smoke test：使用本地已有配置中的 `deepseek-v4-pro`，基于最小 safe prompt snapshot 触发 `DiagnosisService.generate()`；结果 `SMOKE_STATUS=passed`，analysis id `52255559-0720-46a1-9b9b-59ccde149fd7`，`geo_score=50`，`issues=1`，`priority_actions=1`，`asset_drafts=0`，`unknowns=1`，并成功保存 `deepseek_diagnosis_meta.json`
 - 文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/知识库架构技术开发方案.md` 均包含本轮新增知识库方案入口或核心 Method Pack 架构口径
 - DeepSeek 诊断层方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/DeepSeek诊断层模型调用边界开发方案.md` 均包含本轮新增 DeepSeek 诊断层方案入口或核心调用边界口径
 - Conversation / GEO Copilot Chat 层方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 均包含本轮新增 Conversation / GEO Copilot Chat 层方案入口或核心 ConversationSafePack / CopilotTurn 口径
+- Conversation / GEO Copilot Chat 层方案收敛验证：`rg` 已确认 `docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 均包含 `DiagnosisCompactSummary`、`PageInputSource`、`turn_user_context`、`_analyze_source` 和 `llm/settings.py` 口径
 
 当前测试已覆盖：
 
@@ -272,6 +284,10 @@ DeepSeek Diagnosis 调用边界已实现目录：
 - snapshot `evidence.json` / `page_content_profile.json` / `rule_checks.json` / `analysis.json` 落盘一致性与 `load_result()` round-trip
 - snapshot `retrieved_methods.json` / `strategy_plan.json` 落盘，且未进入公开 `AnalysisResponse`
 - snapshot `safe_prompt_pack.json` 落盘，且不包含 raw HTML、完整 clean markdown、HTML comments、script/style 内容
+- snapshot `input_context.json` 落盘，保存 URL 分析请求中的 `source_type`、`input_url`、`language`、`business_type` 和 `target_keywords`，并可通过 `SnapshotStorage.load_input_context()` round-trip；公开 `AnalysisResponse` 未新增 `input_context`
+- URL 分析当前会进入 `FetchedUrlSource -> PageEvidenceService._analyze_source()` 管道；测试已确认 source 类型、URL 字段、final URL、`input_context.json` 和 `safe_prompt_pack.json` 保持稳定
+- `POST /api/analyses/uploads` 成功路径已覆盖：上传 HTML 可生成同构 `AnalysisResponse`、`input_context.json`、`safe_prompt_pack.json`，crawl access 标记为 `uploaded_page_no_external_fetch`，公开响应不新增 `input_context`
+- 上传错误路径已覆盖：空文件返回 422，不支持扩展名返回 422，不支持 content type 返回 422，非 UTF-8 文本返回 422，超过 2 MB 返回 413
 - `GET /api/analyses/{analysis_id}/methods` / `GET /api/analyses/{analysis_id}/strategy` 成功返回已保存 snapshot 产物，缺失时返回 404
 - `PageContentProfile` article/home/injection 风险构建测试
 - `RuleChecks` readiness 规则：`selection.readiness_low`、`absorption.readiness_low`
@@ -318,12 +334,14 @@ DeepSeek Diagnosis 调用边界已实现目录：
 
 下一阶段只做以下工作：
 
-1. 使用更真实页面 snapshot 做 DeepSeek diagnosis 质量样本验证；不得提交 API key、真实响应大文本或敏感 header
-2. 继续维持 `apps/api/app/page_evidence` 冻结，只接受回归修复、兼容性维护和不破坏 contract 的实现增强
-3. 在有真实样本证据时，再评估浏览器渲染 fallback、外部抓取 provider 或进一步性能优化
+1. 新增 conversations models/context/prompt/validator/service，先实现非流式 `POST /api/analyses/{analysis_id}/messages` 后端最小闭环
+2. 构造 `ConversationSafePack`，只读取已保存 snapshot 中的 `safe_prompt_pack.json`、`input_context.json` 和可选 `deepseek_diagnosis.json` 压缩摘要
+3. 定义并校验 `CopilotTurn`，要求 evidence_refs / method_refs 必须来自已知 safe context；合法 fake client 输出可保存消息 snapshot，validator 拒绝时不保存有效 assistant turn
 
 完成这些之前，不进入：
 
 - DeepSeek Diagnosis 的默认基础分析链路接入
 - pgvector / hybrid retrieval
 - 完整前端报告 UI
+- Conversation 流式响应
+- 前端 Chat UI

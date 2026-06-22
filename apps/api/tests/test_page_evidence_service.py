@@ -5,6 +5,8 @@ import socket
 import httpx
 
 from apps.api.app.page_evidence.fetcher import PageFetcher
+from apps.api.app.page_input.models import PageInputContext
+from apps.api.app.page_input.sources import FetchedUrlSource, PageInputSource
 from apps.api.app.page_evidence.service import PageEvidenceService
 from apps.api.app.page_evidence.storage import SnapshotStorage
 from apps.api.app.page_evidence.url_safety import validate_public_url
@@ -85,6 +87,87 @@ def test_page_evidence_service_builds_snapshot_and_rule_checks(tmp_path: Path) -
     assert (Path(result.snapshot_dir or "") / "safe_prompt_pack.json").exists()
     assert (Path(result.snapshot_dir or "") / "analysis.json").exists()
     assert result.page_evidence.crawl_access.robots_txt.status == "missing"
+
+
+def test_page_evidence_service_saves_input_context_snapshot(tmp_path: Path) -> None:
+    html = _read_fixture("article_jsonld_good.html")
+    page_url = "https://example.com/guides/what-is-geo"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/guides/what-is-geo":
+            return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, text=html, request=request)
+        return httpx.Response(404, text="missing", request=request)
+
+    storage = SnapshotStorage(root_dir=tmp_path)
+    service = PageEvidenceService(
+        fetcher=PageFetcher(client=httpx.Client(transport=httpx.MockTransport(handler)), resolver=_resolver),
+        storage=storage,
+        resolver=_resolver,
+    )
+    input_context = PageInputContext(
+        source_type="url",
+        input_url=page_url,
+        language="zh-CN",
+        business_type="b2b_saas",
+        target_keywords=["geo optimization", "ai search"],
+    )
+
+    result = service.analyze(page_url, "zh-CN", input_context)
+
+    snapshot_dir = Path(result.snapshot_dir or "")
+    context_payload = json.loads((snapshot_dir / "input_context.json").read_text(encoding="utf-8"))
+    reloaded = storage.load_input_context(result.id)
+    analysis_payload = json.loads((snapshot_dir / "analysis.json").read_text(encoding="utf-8"))
+
+    assert context_payload["context_version"] == "page-input-context-v0"
+    assert context_payload["source_type"] == "url"
+    assert context_payload["input_url"] == page_url
+    assert context_payload["language"] == "zh-CN"
+    assert context_payload["business_type"] == "b2b_saas"
+    assert context_payload["target_keywords"] == ["geo optimization", "ai search"]
+    assert reloaded == input_context
+    assert "input_context" not in analysis_payload
+
+
+def test_url_analysis_uses_page_input_source_pipeline(tmp_path: Path) -> None:
+    html = _read_fixture("article_jsonld_good.html")
+    page_url = "https://example.com/guides/what-is-geo"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/guides/what-is-geo":
+            return httpx.Response(200, headers={"content-type": "text/html; charset=utf-8"}, text=html, request=request)
+        return httpx.Response(404, text="missing", request=request)
+
+    class RecordingPageEvidenceService(PageEvidenceService):
+        recorded_source: PageInputSource | None = None
+
+        def _analyze_source(
+            self,
+            analysis_id,
+            source: PageInputSource,
+            language: str,
+            input_context: PageInputContext,
+        ):
+            self.recorded_source = source
+            return super()._analyze_source(analysis_id, source, language, input_context)
+
+    service = RecordingPageEvidenceService(
+        fetcher=PageFetcher(client=httpx.Client(transport=httpx.MockTransport(handler)), resolver=_resolver),
+        storage=SnapshotStorage(root_dir=tmp_path),
+        resolver=_resolver,
+    )
+
+    result = service.analyze(page_url, "zh-CN")
+
+    assert isinstance(service.recorded_source, FetchedUrlSource)
+    assert service.recorded_source.input_url == page_url
+    assert service.recorded_source.normalized_url == page_url
+    assert service.recorded_source.fetch_info.final_url == page_url
+    assert result.status == "completed"
+    assert result.page_evidence is not None
+    assert result.page_evidence.input_url == page_url
+    assert (Path(result.snapshot_dir or "") / "input_context.json").exists()
+    assert (Path(result.snapshot_dir or "") / "safe_prompt_pack.json").exists()
 
 
 def test_page_evidence_service_returns_failed_result_for_unsafe_url(tmp_path: Path) -> None:

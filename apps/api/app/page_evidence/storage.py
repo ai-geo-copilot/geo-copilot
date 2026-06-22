@@ -6,6 +6,7 @@ from uuid import UUID
 
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
 from apps.api.app.diagnosis.models import DeepSeekDiagnosis
+from apps.api.app.page_input.models import PageInputContext
 from apps.api.app.safe_prompt.models import SafePromptPack
 
 from .models import AnalysisResult, PageContentProfile, PageEvidencePack, RuleCheck
@@ -30,6 +31,7 @@ class SnapshotStorage:
         retrieved_methods: RetrievedMethodPack | None = None,
         strategy_plan: StrategyPlan | None = None,
         safe_prompt_pack: SafePromptPack | None = None,
+        input_context: PageInputContext | None = None,
     ) -> str:
         snapshot_dir = self.get_snapshot_dir(analysis_id)
         snapshot_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +64,8 @@ class SnapshotStorage:
                 json.dumps(safe_prompt_pack.model_dump(mode="json"), ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+        if input_context is not None:
+            self.save_input_context(analysis_id, input_context)
         (snapshot_dir / "analysis.json").write_text(
             result.model_dump_json(indent=2),
             encoding="utf-8",
@@ -74,6 +78,20 @@ class SnapshotStorage:
         if not analysis_file.exists():
             return None
         return AnalysisResult.model_validate_json(analysis_file.read_text(encoding="utf-8"))
+
+    def save_input_context(self, analysis_id: UUID, input_context: PageInputContext) -> None:
+        snapshot_dir = self.get_snapshot_dir(analysis_id)
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+        (snapshot_dir / "input_context.json").write_text(
+            json.dumps(input_context.model_dump(mode="json"), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    def load_input_context(self, analysis_id: UUID) -> PageInputContext | None:
+        context_file = self._root_dir / str(analysis_id) / "input_context.json"
+        if not context_file.exists():
+            return None
+        return PageInputContext.model_validate_json(context_file.read_text(encoding="utf-8"))
 
     def load_retrieved_methods(self, analysis_id: UUID) -> RetrievedMethodPack | None:
         methods_file = self._root_dir / str(analysis_id) / "retrieved_methods.json"
