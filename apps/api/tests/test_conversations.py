@@ -75,7 +75,7 @@ def test_conversation_service_generates_validates_and_saves_turn(tmp_path: Path)
     assert (snapshot_dir / "000001_assistant.meta.json").exists()
 
 
-def test_conversation_service_rejects_unknown_refs_without_saving(tmp_path: Path) -> None:
+def test_conversation_service_repairs_unknown_refs_and_saves_turn(tmp_path: Path) -> None:
     storage = SnapshotStorage(root_dir=tmp_path)
     analysis_id = uuid4()
     _write_conversation_base_snapshot(storage, analysis_id)
@@ -86,14 +86,78 @@ def test_conversation_service_rejects_unknown_refs_without_saving(tmp_path: Path
         settings=DeepSeekSettings(api_key="unused"),
     )
 
-    try:
-        service.create_turn(analysis_id, {"message": "先改哪里？"})
-    except ConversationServiceError as exc:
-        assert exc.status_code == 422
-        assert str(exc) == "copilot output failed validation"
-    else:  # pragma: no cover
-        raise AssertionError("Expected validator failure")
-    assert not (storage.get_snapshot_dir(analysis_id) / "conversations").exists()
+    result = service.create_turn(analysis_id, {"message": "先改哪里？"})
+
+    assert result.intent == "ask_unknown"
+    assert result.evidence_refs == []
+    assert result.method_refs == []
+    assert result.validator_warnings[0].startswith("provider_output_repaired_after_validation_failure")
+    history = storage.load_conversation_history(analysis_id)
+    assert len(history.messages) == 2
+
+
+def test_conversation_service_wraps_and_saves_plain_text_provider_output(tmp_path: Path) -> None:
+    storage = SnapshotStorage(root_dir=tmp_path)
+    analysis_id = uuid4()
+    _write_conversation_base_snapshot(storage, analysis_id)
+    safe_pack = _safe_prompt_pack()
+    evidence_ref = safe_pack.evidence_excerpts[0].evidence_ref
+    method_ref = safe_pack.retrieved_methods.chunks[0].method_ref
+    plain_text = f"优先修复标题层级。证据：{evidence_ref}。方法：{method_ref}。"
+    service = ConversationService(
+        storage=storage,
+        client=_FakeClient(plain_text),
+        settings=DeepSeekSettings(api_key="unused"),
+    )
+
+    result = service.create_turn(analysis_id, {"message": "优先改哪几个问题？"})
+
+    assert result.intent == "prioritize_actions"
+    assert result.answer == plain_text
+    assert result.evidence_refs == [evidence_ref]
+    assert result.method_refs == [method_ref]
+    assert result.validator_warnings == ["provider_returned_non_json_wrapped"]
+    history = storage.load_conversation_history(analysis_id)
+    assert len(history.messages) == 2
+    assert history.messages[1].content == plain_text
+
+
+def test_conversation_service_unwraps_json_nested_inside_answer(tmp_path: Path) -> None:
+    storage = SnapshotStorage(root_dir=tmp_path)
+    analysis_id = uuid4()
+    _write_conversation_base_snapshot(storage, analysis_id)
+    inner_turn = _turn(analysis_id).model_copy(update={"answer": "这是给用户看的自然语言回答。"})
+    outer_turn = _turn(analysis_id).model_copy(update={"answer": inner_turn.model_dump_json()})
+    service = ConversationService(
+        storage=storage,
+        client=_FakeClient(outer_turn.model_dump_json()),
+        settings=DeepSeekSettings(api_key="unused"),
+    )
+
+    result = service.create_turn(analysis_id, {"message": "给我一个geo的完整优化方案"})
+
+    assert result.answer == "这是给用户看的自然语言回答。"
+    assert not result.answer.strip().startswith("{")
+    assert "answer_contained_nested_json_unwrapped" in result.validator_warnings
+    history = storage.load_conversation_history(analysis_id)
+    assert history.messages[1].content == "这是给用户看的自然语言回答。"
+
+
+def test_conversation_service_unwraps_plain_provider_nested_json(tmp_path: Path) -> None:
+    storage = SnapshotStorage(root_dir=tmp_path)
+    analysis_id = uuid4()
+    _write_conversation_base_snapshot(storage, analysis_id)
+    inner_turn = _turn(analysis_id).model_copy(update={"answer": "不要把 JSON 直接展示给用户。"})
+    service = ConversationService(
+        storage=storage,
+        client=_FakeClient(inner_turn.model_dump_json()),
+        settings=DeepSeekSettings(api_key="unused"),
+    )
+
+    result = service.create_turn(analysis_id, {"message": "把建议整理成可执行清单"})
+
+    assert result.answer == "不要把 JSON 直接展示给用户。"
+    assert not result.answer.strip().startswith("{")
 
 
 def test_conversation_service_missing_safe_prompt_does_not_call_client(tmp_path: Path) -> None:
@@ -142,6 +206,8 @@ def test_copilot_prompt_uses_safe_context_only(tmp_path: Path) -> None:
     prompt_text = prompt[1]["content"].lower()
 
     assert "diagnosis-compact-summary-v0" in prompt_text
+    assert '"intent":"prioritize_actions"' not in prompt_text
+    assert "recent_messages" in prompt_text
     assert "<html" not in prompt_text
     assert "<script" not in prompt_text
     assert "<!--" not in prompt_text

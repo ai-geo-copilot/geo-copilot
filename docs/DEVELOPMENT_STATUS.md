@@ -1,7 +1,7 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-22
+最后更新：2026-06-25
 唯一开发状态源：是
 
 ## 1. 使用规则
@@ -158,8 +158,16 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - URL HTML 抓取默认响应体上限已从 1 MB 提高到 20 MB，并保留流式读取过程中的超限拦截和 `Content-Length` 预拒绝；该调整不改变公开 `AnalysisResponse` / `PageEvidencePack` contract。上传接口仍保持当前 2 MB 文件上限
 - `apps/web` 已完成前端接口 / 数据 / 功能层本轮补齐：新增 `types/api.ts`、`lib/api-client.ts`、`lib/api-guards.ts`、`lib/format.ts`、`hooks/use-geo-copilot.ts`、`mocks/workbench-data.ts`，并拆出 `analysis-intake`、`upload-intake`、`analysis-summary`、`rule-check-list`、`methods-panel`、`strategy-panel`、`diagnosis-panel`、`copilot-thread`、`asset-draft-panel`、`ref-chip` 和 `workbench` 组件；当前首页已从静态 scaffold 改为最小 GEO Copilot Workbench，可调用 URL analysis、upload analysis、methods、strategy、diagnosis 和 messages 相关 client/hook，并具备上传 UI、细粒度 operation state、refs chip / 聚焦、asset drafts 基础展示和更深层 response guards。
 - `apps/web` 已映射用户自带 LLM provider 配置：新增 provider config 类型、response guards、API client 方法、hook actions 和 `provider-config-panel`，前端可提交、测试、清除 provider 配置；API key 仅通过后端接口提交，不由浏览器直接调用第三方模型 API。
-- `origin/front-end` 的完整前端展示层已快进合入当前 `main` 工作区：新增 `analysis-status-bar`，并增强 `analysis-summary`、`asset-draft-panel`、`copilot-thread`、`diagnosis-panel`、`methods-panel`、`strategy-panel`、`provider-config-panel` 和整体 CSS。合入后修复了 `analysis-status-bar` 作为 grid 子项导致桌面三栏错位的问题，当前状态栏跨整行，Intake / Thread / Evidence 在 1440px 下同一行展示。
+- `apps/web` 已按 `origin/front-end@2056bc2` 精确覆盖前端目录，同时保留当前 `main@eb2e5b3804708f6e0daf630c33707d26a8d155f8` 的后端、接口模块和 contract；当前前端为 Design 2.0 landing page + analysis components 展示层，新增 `components/landing/*`、`components/analysis/*`、`mocks/landing-data.ts` 和 `mocks/analysis-demo-data.ts`。
+- `apps/web` 已把 Design 2.0 首页重新接入真实功能工作台：Hero URL 提交会传入 `GeoCopilotWorkbench` 并调用真实 `POST /api/analyses`；页面保留 landing 视觉，同时恢复 URL / 上传分析、provider 配置、DeepSeek diagnosis、Copilot messages、methods / strategy / evidence 面板。
+- `apps/web` 已按最新 `origin/front-end@ea39f3d` 再次精确覆盖前端目录；远端前端新增 `components/analysis/live-analysis-section.tsx`，首页 Hero URL 提交直接调用 `useGeoCopilot`，并在 Design 2.0 页面内展示真实 analysis / diagnosis / methods / strategy 数据。
+- 本地前后端联调默认地址已统一到 `127.0.0.1`：前端默认 API base 改为 `http://127.0.0.1:8000`，后端 CORS 同时允许 `http://localhost:3000` 与 `http://127.0.0.1:3000`，避免浏览器用 `127.0.0.1:3000` 打开时被 CORS 拦截。
+- 前端 Provider 错误提示已细化：HTTP 502 下会区分 `provider auth failed` 与 `provider billing unavailable`，分别提示 API Key / Base URL / Provider 不匹配或额度账单不可用，避免统一显示“Provider 配置或额度问题”。
+- 前端 provider 成功保存或测试后会清除旧的 diagnosis / Copilot history provider 错误；Copilot 发送失败后不再永久保留 pending user message，避免已修复 key 后仍显示旧认证失败状态。
+- Copilot 对话已延长上下文并增强保存：ConversationSafePack recent messages 窗口从 8 条扩大到 20 条；模型如果返回普通文本而不是合法 JSON，后端会把文本包装成合法 `CopilotTurn` 并保存到 conversation history，同时记录 `provider_returned_non_json_wrapped` validator warning，不再因非 JSON 直接中断整轮对话。
 - Copilot / Diagnosis 的“改哪里”反馈已完成一次可落地性修复：`SafePromptPack.evidence_excerpts` 现在会把 `geo_signals.claim_candidates[*]` 与 `geo_signals.statistics[*]` 转成安全原文片段，prompt 明确要求在用户询问具体修改位置时引用 excerpt 原文、source type 和 evidence_ref，而不是只返回抽象 ref 列表。
+- Copilot 对话连续追问修复：Conversation prompt 已移除固定 `prioritize_actions` 示例 intent，并要求模型按当前用户问题、allowed intents 与 recent messages 生成差异化中文回答；ConversationService 当前会在模型返回未知引用或引用缺失导致业务校验失败时做安全降级，丢弃未知引用 / 不完整 asset draft，必要时转为 `ask_unknown` 并保存 turn，同时记录 `provider_output_repaired_after_validation_failure` warning，不再让普通对话因模型输出小错直接中断。
+- Copilot 嵌套 JSON 展示修复：Conversation prompt 已明确禁止把 JSON / escaped JSON / CopilotTurn 对象放进 `answer` 字段；ConversationService 当前会在模型把完整 CopilotTurn JSON 错误塞入 `answer` 或普通文本响应中时自动解包，只保存内部自然语言回答，并记录 `answer_contained_nested_json_unwrapped` 或 `provider_returned_nested_json_unwrapped` warning，避免前端把 JSON 原文展示给用户。
 
 ### 4.4 当前契约状态
 
@@ -228,6 +236,8 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `docs/README.md` 已把该 PageEvidence heuristic 优化方案加入正式阅读入口。
 - `docs/模块开发补充/前端页面与接口对接开发方案.md` 已更新为当前状态与剩余前端页面交付方案，用作 `apps/web` 前端 HTML/CSS 页面呈现、接口联调、GEO Copilot Workbench 状态收口、外部 GitHub 方案取舍和验收方案。
 - `docs/README.md` 已把该前端页面与接口对接方案加入正式阅读入口。
+- `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 已新增并完成二次审计优化，用作面向 80% 商业产品完成度的重构方案；当前结论是保留现有 PageEvidence / RuleChecks / MethodSelector / SafePromptPack 等确定性 GEO 资产，先补 Postgres、任务队列、Repository、LLM provider gateway、观测评测、报告 UI、资产导出和项目 / 站点级产品地基，再增量引入 LangGraph 作为多步工作流编排层；Pydantic AI 可作为 LLM gateway 内部结构化调用 / eval 候选，但不替代 LangGraph 的长流程状态职责；不建议全量重写成 LangChain Agent 或用通用聊天 / RAG 平台替换主链路。
+- `docs/README.md` 已把该商业产品化重构与 Agent 架构方案加入正式阅读入口。
 
 当前文档口径：
 
@@ -243,6 +253,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Conversation / GEO Copilot Chat 层当前正式口径是 `用户 URL / 上传页面 -> PageInputContext -> PageInputSource -> PageEvidencePack -> SafePromptPack -> ConversationSafePack -> DeepSeek Copilot Turn -> CopilotTurn validator -> 对话 snapshot`；`DeepSeekDiagnosis` 只作为可选输入，经 `DiagnosisCompactSummary` 压缩后进入 ConversationSafePack，不作为对话层硬依赖。当前已实现非流式后端最小闭环和 default conversation snapshot；后续实现不得让 DeepSeek 直接读取 raw HTML、完整 clean markdown 或未经裁剪的上传页面内容，不得改变已冻结基础 `AnalysisResponse`。
 - 前端页面与接口对接当前正式口径是 `GEO Copilot Workbench v0`：当前 `apps/web` 已完成 URL / upload analysis、methods、strategy、diagnosis、非流式 messages 和 LLM provider config 的前端接口 / 数据 / 功能层最小闭环；下一步只在该基线上收口 HTML/CSS 页面呈现、响应式、错误态、真实后端浏览器联调和前端 smoke。前端不读取 `snapshot_dir` 本地文件，不直接调用 DeepSeek，不渲染 raw HTML，并且不把完整报告页、RAG、流式响应、账号系统或可发布 Copilot actions 纳入 v0。
 - PageEvidence heuristic 优化当前正式口径是先新增内部可解释 trace / feature vector 和 page type candidate score，再用真实 fixture calibration / holdout 防过拟合；目标是在不改变公开 contract 的前提下修复 CNN / Apple / Stripe 暴露的大型首页、产品家族页、定价页误判风险。当前仅完成方案文档，尚未改 heuristic 代码。
+- 商业产品化重构当前正式口径是 `先产品化地基，再 LangGraph 增量引入 + 保留确定性 GEO 引擎`：LangGraph 只作为 AnalyzePageGraph / DiagnosisGraph / CopilotGraph / ReportGraph 等工作流运行时，不替代 PageEvidence、RuleChecks、MethodSelector、SafePromptPack 或 validator；Pydantic AI 只作为 LLMProviderGateway 内部结构化调用 / eval 候选；LangChain / LlamaIndex / Crawl4AI / Firecrawl / llms.txt 相关工具只按边界作为模型适配、研究知识库、抓取 fallback 或资产产物参考。当前方案新增工程质量门禁、作业状态机、数据所有权、产品边界、反方案和技术选择门禁，明确不追求一次性完美架构。
 
 ## 5. 当前边界
 
@@ -275,6 +286,27 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `python -m pytest apps/api/tests/test_llm_settings.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_service.py`
 - `npm --workspace apps/web run typecheck`
 - `npm --workspace apps/web run build`
+- `npm --workspace apps/web run build`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run build`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:3000' -UseBasicParsing -TimeoutSec 10`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:8000/docs' -UseBasicParsing -TimeoutSec 5`
+- `python -m pytest apps/api/tests/test_llm_provider_api.py`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/llm/provider' -Headers @{Origin='http://127.0.0.1:3000'} -UseBasicParsing -TimeoutSec 10`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:3000' -UseBasicParsing -TimeoutSec 10`
+- 本地 Provider smoke：使用 `.env` 中当前 DeepSeek 配置，不打印 API key，调用 `DeepSeekClient.create_json_completion(...)`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run build`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run build`
+- `Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/llm/provider' -Method Get`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:3000' -UseBasicParsing -TimeoutSec 15`
+- `python -m pytest apps/api/tests/test_conversations.py`
+- `npm --workspace apps/web run typecheck`
+- `npm --workspace apps/web run build`
+- `Invoke-WebRequest -Uri 'http://127.0.0.1:8000/api/llm/provider' -UseBasicParsing -TimeoutSec 10`
+- `Invoke-RestMethod -Uri 'http://127.0.0.1:8000/api/llm/provider' -Method Get`
 - `python -m pytest apps/api/tests/test_safe_prompt_pack.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_prompt.py apps/api/tests/test_diagnosis_validator.py`
 - 本地服务验证：`python -m uvicorn apps.api.app.main:app --host 127.0.0.1 --port 8000` 与 `npm --workspace apps/web run dev -- --hostname 127.0.0.1 --port 3000`
 - Playwright 浏览器 smoke：访问 `http://localhost:3000`，桌面 1440x1000 与移动 375x900 检查首屏、移动 tab、横向溢出；桌面上传 `apps/api/tests/fixtures/html/cjk_product_page.html` 后检查 summary / rules / methods / strategy
@@ -292,6 +324,9 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `rg -n "PageEvidence启发式规则质量优化方案|PageHeuristicTrace|PageTypeCandidateScore|防过拟合|CNN|Apple|Stripe" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\PageEvidence启发式规则质量优化方案.md'`
 - `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\前端页面与接口对接开发方案.md'`
 - `rg -n "前端页面与接口对接开发方案|ready-for-frontend-page-implementation|GEO Copilot Workbench|当前已完成|当前仍未完成|真实后端浏览器联调|前端 smoke" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\前端页面与接口对接开发方案.md'`
+- `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
+- `rg -n "商业产品化重构与Agent架构方案|LangGraph 增量引入|80% 商业产品|AnalyzePageGraph|LLMProviderGateway|GEO Optimizer" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
+- `rg -n "Pydantic AI|作业状态机|数据所有权|工程质量门禁|技术选择门禁|反方案" 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
 
 最新验证结果：
 
@@ -304,7 +339,17 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `compileall`：通过
 - Web typecheck：`npm --workspace apps/web run typecheck` 通过；已覆盖本轮拆分后的前端 API client、response guards、hook、upload UI、refs、asset draft 和 workbench 组件类型
 - Web build：`npm --workspace apps/web run build` 通过；Next.js 16.2.9 使用 Turbopack 编译成功
-- Web browser smoke：`http://localhost:3000` 桌面 1440x1000 首屏通过，包含 `页面分析工作台`、模型配置和 Evidence 面板，无横向溢出；移动 375x900 输入 / 对话 / 证据 tab 可切换，证据 tab 可展示页面摘要与规则检查空态，无横向溢出。使用上传 UI 分析 `cjk_product_page.html` 成功返回 completed analysis，状态栏 1 个、rule cards 23 个，summary / rules / methods / strategy 均展示；修复后 Intake / Thread / Evidence 三列同一行展示。浏览器仅观察到 favicon / missing diagnosis snapshot 404，不影响页面运行。
+- Frontend branch overlay：已仅用 `origin/front-end@2056bc2` 覆盖 `apps/web`，保留当前 `main@eb2e5b3804708f6e0daf630c33707d26a8d155f8` 后端与 contract；`npm --workspace apps/web run build` 通过，随后 `npm --workspace apps/web run typecheck` 通过。
+- Frontend branch overlay update：已 fetch 到 `origin/front-end@ea39f3d`，确认其新增 live API data 接入后，仅覆盖 `apps/web`；`npm --workspace apps/web run typecheck` 通过，`npm --workspace apps/web run build` 通过。
+- Design 2.0 功能接入验证：`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过；`http://127.0.0.1:3000` 返回 200 且页面包含 `真实分析、诊断与 Copilot 对话`；`http://127.0.0.1:8000/docs` 返回 200。
+- Localhost / 127 联调修复验证：`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过；`python -m pytest apps/api/tests/test_llm_provider_api.py` 为 2 passed；模拟 `Origin: http://127.0.0.1:3000` 请求 `http://127.0.0.1:8000/api/llm/provider` 返回 200 且 `access-control-allow-origin` 为 `http://127.0.0.1:3000`；前端 `http://127.0.0.1:3000` 返回 200 且页面包含 `127.0.0.1:8000`。
+- Provider 认证诊断：本地 Provider smoke 确认当前 `.env` DeepSeek 配置读取到 `provider=deepseek`、`model=deepseek-v4-pro`、`base_url=https://api.deepseek.com`、`HAS_KEY=True`，但真实调用返回 `DeepSeekAuthError status=401`；当前是 API Key / Provider 认证失败，不是前后端连接问题。前端错误文案细化后，`npm --workspace apps/web run typecheck` 和 `npm --workspace apps/web run build` 均通过。
+- Provider 状态残留修复验证：`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过；后端 `GET /api/llm/provider` 返回当前配置 `provider=deepseek`、`model=deepseek-v4-pro`、`configured=true`；前端 `http://127.0.0.1:3000` 返回 200。
+- Copilot 对话保存增强验证：`python -m pytest apps/api/tests/test_conversations.py` 为 6 passed；新增测试确认 provider 返回普通文本时会包装并保存为 `CopilotTurn`；`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过；API 重启后 `GET /api/llm/provider` 返回 200，当前配置仍为 `provider=deepseek`、`model=deepseek-v4-pro`、`configured=true`。
+- Copilot 连续追问 / 回答差异化修复验证：`python -m pytest apps/api/tests/test_conversations.py` 为 6 passed；`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 17 passed；`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过。
+- Copilot 嵌套 JSON 展示修复验证：`python -m pytest apps/api/tests/test_conversations.py` 为 8 passed；`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 19 passed；`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过。
+- 提交前后端审计验证：`python -m pytest apps/api/tests/test_conversations.py apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py` 为 19 passed；`python -m pytest` 为 97 passed；`git diff --check` 未报告错误；敏感词扫描仅命中文档占位、测试假 key、字段名和 fixture 文本，未发现真实 secret。
+- Web browser smoke（前端覆盖前记录）：`http://localhost:3000` 桌面 1440x1000 首屏通过，包含 `页面分析工作台`、模型配置和 Evidence 面板，无横向溢出；移动 375x900 输入 / 对话 / 证据 tab 可切换，证据 tab 可展示页面摘要与规则检查空态，无横向溢出。使用上传 UI 分析 `cjk_product_page.html` 成功返回 completed analysis，状态栏 1 个、rule cards 23 个，summary / rules / methods / strategy 均展示。浏览器仅观察到 favicon / missing diagnosis snapshot 404，不影响页面运行。
 - Safe Prompt / Conversation 定位反馈回归：`python -m pytest apps/api/tests/test_safe_prompt_pack.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_prompt.py apps/api/tests/test_diagnosis_validator.py`，14 passed；新增测试确认 safe prompt 会为 claim candidate 生成带原文 text 的 `claim_candidate` excerpt。
 - DeepSeek provider smoke test：使用本地已有配置中的 `deepseek-v4-pro`，基于最小 safe prompt snapshot 触发 `DiagnosisService.generate()`；结果 `SMOKE_STATUS=passed`，analysis id `52255559-0720-46a1-9b9b-59ccde149fd7`，`geo_score=50`，`issues=1`，`priority_actions=1`，`asset_drafts=0`，`unknowns=1`，并成功保存 `deepseek_diagnosis_meta.json`
 - DeepSeek Copilot provider smoke test：使用 `.env` fallback 读取本地 DeepSeek 配置；历史上 CNN 首页直接 URL 分析曾因 HTML 约 4.8 MB 超过旧抓取层上限返回 `fetch_failed`，现已通过 20 MB URL 抓取上限修正；此前用 CNN 首页 excerpt 走 uploaded HTML 同构管道成功生成 analysis id `ac188acf-8342-41d0-9e32-0d5b8e753c1b`，随后 `ConversationService.create_turn()` 调用 `deepseek-v4-pro` 成功返回并保存 `CopilotTurn`，turn id `a1b2c3d4-e5f6-7890-abcd-ef1234567890`，intent `prioritize_actions`
@@ -315,6 +360,8 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Conversation / GEO Copilot Chat 层方案收敛验证：`rg` 已确认 `docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/Conversation与GEOCopilotChat层开发方案.md` 均包含 `DiagnosisCompactSummary`、`PageInputSource`、`turn_user_context`、`_analyze_source` 和 `llm/settings.py` 口径
 - PageEvidence heuristic 优化方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/PageEvidence启发式规则质量优化方案.md` 均包含本轮新增方案入口、`PageHeuristicTrace` / `PageTypeCandidateScore`、防过拟合规则和 CNN / Apple / Stripe 误判样本口径
 - 前端页面与接口对接方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/前端页面与接口对接开发方案.md` 均包含方案入口、`ready-for-frontend-page-implementation`、`GEO Copilot Workbench`、当前已完成 / 未完成状态、真实后端浏览器联调和前端 smoke 口径
+- 商业产品化重构与 Agent 架构方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 均包含方案入口、`LangGraph 增量引入`、`80% 商业产品`、`AnalyzePageGraph`、`LLMProviderGateway` 和 `GEO Optimizer` 口径
+- 商业产品化重构二次审计验证：`rg` 已确认 `docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 均包含 `Pydantic AI`、`作业状态机`、`数据所有权`、`工程质量门禁`、`技术选择门禁` 和 `反方案` 口径
 
 当前测试已覆盖：
 

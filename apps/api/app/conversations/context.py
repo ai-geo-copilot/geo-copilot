@@ -38,7 +38,7 @@ def build_conversation_safe_pack(
         input_context=input_context,
         safe_prompt_pack=safe_prompt_pack,
         diagnosis_summary=compact_diagnosis(diagnosis) if diagnosis is not None else None,
-        recent_messages=(recent_messages or [])[-8:],
+        recent_messages=(recent_messages or [])[-20:],
         user_message=user_message,
         turn_user_context=turn_user_context,
         allowed_intents=list(ALLOWED_INTENTS),
