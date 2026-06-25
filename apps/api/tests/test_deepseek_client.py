@@ -82,6 +82,40 @@ def test_openai_compatible_client_omits_deepseek_specific_fields() -> None:
     assert result.content == '{"ok":true}'
 
 
+def test_deepseek_client_text_completion_uses_chat_settings() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-v4-pro",
+                "choices": [{"message": {"content": "这是自然语言回答。"}, "finish_reason": "stop"}],
+            },
+        )
+
+    client = DeepSeekClient(
+        api_key="secret-key",
+        model="deepseek-v4-pro",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    result = client.create_text_completion(
+        messages=[{"role": "system", "content": "Answer naturally."}],
+        user_id="analysis_11111111111111111111111111111111",
+        max_tokens=256,
+    )
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert "response_format" not in body
+    assert "thinking" not in body
+    assert body["temperature"] == 0.4
+    assert body["user_id"] == "analysis_11111111111111111111111111111111"
+    assert result.content == "这是自然语言回答。"
+
+
 def test_deepseek_client_does_not_retry_auth_errors() -> None:
     calls = 0
 

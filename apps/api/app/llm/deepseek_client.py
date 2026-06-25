@@ -70,16 +70,53 @@ class DeepSeekClient:
         user_id: str,
         max_tokens: int,
     ) -> DeepSeekCompletionResult:
+        return self._create_completion(
+            messages=messages,
+            user_id=user_id,
+            max_tokens=max_tokens,
+            json_mode=True,
+            temperature=0,
+            disable_thinking=True,
+        )
+
+    def create_text_completion(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        user_id: str,
+        max_tokens: int,
+    ) -> DeepSeekCompletionResult:
+        return self._create_completion(
+            messages=messages,
+            user_id=user_id,
+            max_tokens=max_tokens,
+            json_mode=False,
+            temperature=0.4,
+            disable_thinking=False,
+        )
+
+    def _create_completion(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        user_id: str,
+        max_tokens: int,
+        json_mode: bool,
+        temperature: float,
+        disable_thinking: bool,
+    ) -> DeepSeekCompletionResult:
         body: dict[str, Any] = {
             "model": self._model,
             "messages": messages,
-            "response_format": {"type": "json_object"},
             "max_tokens": max_tokens,
             "stream": False,
-            "temperature": 0,
+            "temperature": temperature,
         }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
         if self._provider == "deepseek":
-            body["thinking"] = {"type": "disabled"}
+            if disable_thinking:
+                body["thinking"] = {"type": "disabled"}
             body["user_id"] = user_id
         else:
             body["user"] = user_id

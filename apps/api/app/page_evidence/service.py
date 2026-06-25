@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import httpx
 
+from apps.api.app.db.models import JobRecord
+from apps.api.app.db.repositories import AnalysisRepository, JobRepository, SnapshotAnalysisRepository, SnapshotJobRepository
 from apps.api.app.methods.planner import plan_strategy
 from apps.api.app.methods.selector import select_methods
 from apps.api.app.methods.models import RetrievedMethodPack, StrategyPlan
@@ -32,11 +35,15 @@ class PageEvidenceService:
         *,
         fetcher: PageFetcher | None = None,
         storage: SnapshotStorage | None = None,
+        analysis_repository: AnalysisRepository | None = None,
+        job_repository: JobRepository | None = None,
         resolver: Resolver | None = None,
     ) -> None:
         self._client = httpx.Client(timeout=10.0, trust_env=False) if fetcher is None else None
         self._fetcher = fetcher or PageFetcher(client=self._client, resolver=resolver)
         self._storage = storage or SnapshotStorage()
+        self._analysis_repository = analysis_repository or SnapshotAnalysisRepository(self._storage)
+        self._job_repository = job_repository or SnapshotJobRepository(self._storage)
         self._resolver = resolver
 
     def close(self) -> None:
@@ -169,6 +176,28 @@ class PageEvidenceService:
             safe_prompt_pack,
             input_context,
         )
+        self._job_repository.save(
+            JobRecord(
+                job_id=uuid4(),
+                analysis_id=analysis_id,
+                job_type="analysis",
+                status="succeeded",
+                attempts=1,
+                input_hash=fetch_info.html_sha256,
+                artifact_refs=[
+                    "analysis.json",
+                    "evidence.json",
+                    "page_content_profile.json",
+                    "rule_checks.json",
+                    "retrieved_methods.json",
+                    "strategy_plan.json",
+                    "safe_prompt_pack.json",
+                    "input_context.json",
+                ],
+                started_at=datetime.now(UTC),
+                finished_at=datetime.now(UTC),
+            )
+        )
         return result
 
     def _build_uploaded_fetch_info(self, *, html: str, final_url: str, upload_sha256: str) -> FetchInfo:
@@ -233,7 +262,7 @@ class PageEvidenceService:
             )
 
     def get_result(self, analysis_id: UUID) -> AnalysisResult | None:
-        return self._storage.load_result(analysis_id)
+        return self._analysis_repository.get_result(analysis_id)
 
     def get_retrieved_methods(self, analysis_id: UUID) -> RetrievedMethodPack | None:
         return self._storage.load_retrieved_methods(analysis_id)

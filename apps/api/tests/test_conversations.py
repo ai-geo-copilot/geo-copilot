@@ -22,8 +22,16 @@ class _FakeClient:
     def __init__(self, content: str) -> None:
         self.content = content
         self.calls = 0
+        self.json_calls = 0
 
     def create_json_completion(self, *, messages, user_id, max_tokens):
+        self.json_calls += 1
+        return self._complete(messages=messages, user_id=user_id, max_tokens=max_tokens)
+
+    def create_text_completion(self, *, messages, user_id, max_tokens):
+        return self._complete(messages=messages, user_id=user_id, max_tokens=max_tokens)
+
+    def _complete(self, *, messages, user_id, max_tokens):
         self.calls += 1
         assert "ConversationSafePack" in messages[1]["content"]
         assert "<script" not in messages[1]["content"].lower()
@@ -65,6 +73,7 @@ def test_conversation_service_generates_validates_and_saves_turn(tmp_path: Path)
 
     assert result.intent == "prioritize_actions"
     assert fake_client.calls == 1
+    assert fake_client.json_calls == 0
     history = storage.load_conversation_history(analysis_id)
     assert len(history.messages) == 2
     assert history.messages[0].role == "user"
@@ -120,6 +129,24 @@ def test_conversation_service_wraps_and_saves_plain_text_provider_output(tmp_pat
     history = storage.load_conversation_history(analysis_id)
     assert len(history.messages) == 2
     assert history.messages[1].content == plain_text
+
+
+def test_conversation_service_uses_strategy_refs_for_natural_action_answer(tmp_path: Path) -> None:
+    storage = SnapshotStorage(root_dir=tmp_path)
+    analysis_id = uuid4()
+    _write_conversation_base_snapshot(storage, analysis_id)
+    service = ConversationService(
+        storage=storage,
+        client=_FakeClient("先补首屏定义，再处理缺少来源的主张，最后修复结构化数据与可见内容的一致性。"),
+        settings=DeepSeekSettings(api_key="unused"),
+    )
+
+    result = service.create_turn(analysis_id, {"message": "把建议整理成可执行清单"})
+
+    assert result.intent == "prioritize_actions"
+    assert result.evidence_refs
+    assert result.method_refs
+    assert result.answer.startswith("先补首屏定义")
 
 
 def test_conversation_service_unwraps_json_nested_inside_answer(tmp_path: Path) -> None:

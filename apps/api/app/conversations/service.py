@@ -64,15 +64,15 @@ class ConversationService:
             diagnosis=self._storage.load_deepseek_diagnosis(analysis_id),
         )
         client = self._client or self._build_client()
-        result = client.create_json_completion(
-            messages=self._prompt_builder.build_messages(safe_pack),
+        result = client.create_text_completion(
+            messages=self._prompt_builder.build_chat_messages(safe_pack),
             user_id=f"analysis_{str(analysis_id).replace('-', '')}",
             max_tokens=self._effective_settings().max_tokens,
         )
         try:
             turn = CopilotTurn.model_validate_json(result.content)
         except ValidationError as exc:
-            turn = self._wrap_plain_text_turn(safe_pack, result.content)
+            turn = self._wrap_plain_text_turn(safe_pack, result.content, request)
         turn = self._normalize_turn(turn, safe_pack)
         try:
             turn = validate_copilot_turn(turn, safe_pack)
@@ -113,7 +113,12 @@ class ConversationService:
             return self._provider_store.get_effective()
         return self._settings.to_provider_settings()
 
-    def _wrap_plain_text_turn(self, safe_pack: ConversationSafePack, content: str) -> CopilotTurn:
+    def _wrap_plain_text_turn(
+        self,
+        safe_pack: ConversationSafePack,
+        content: str,
+        request: ConversationMessageRequest,
+    ) -> CopilotTurn:
         answer = content.strip()
         if not answer:
             raise ConversationServiceError("copilot provider returned empty content", status_code=502)
@@ -130,7 +135,16 @@ class ConversationService:
             )
         evidence_refs = _refs_mentioned_in_text(answer, safe_pack.known_evidence_refs)
         method_refs = _refs_mentioned_in_text(answer, safe_pack.known_method_refs)
-        intent = "prioritize_actions" if evidence_refs and method_refs else "ask_unknown"
+        intent = _requested_or_inferred_intent(request)
+        if intent in {"prioritize_actions", "compare_options"}:
+            evidence_refs = evidence_refs or _top_strategy_evidence_refs(safe_pack)
+            method_refs = method_refs or _top_strategy_method_refs(safe_pack)
+        if intent in {"draft_metadata", "draft_definition_block", "draft_faq", "draft_json_ld", "request_evidence"}:
+            evidence_refs = evidence_refs or _top_strategy_evidence_refs(safe_pack, limit=3)
+            method_refs = method_refs or _top_strategy_method_refs(safe_pack, limit=3)
+        if not evidence_refs or (intent in {"prioritize_actions", "compare_options"} and not method_refs):
+            intent = "ask_unknown"
+            method_refs = []
         return CopilotTurn(
             turn_id=uuid4(),
             analysis_id=safe_pack.analysis_id,
@@ -221,3 +235,48 @@ def _parse_nested_turn(text: str) -> CopilotTurn | None:
         return CopilotTurn.model_validate(payload)
     except ValidationError:
         return None
+
+
+def _requested_or_inferred_intent(request: ConversationMessageRequest):
+    if request.intent != "auto":
+        return request.intent
+    message = request.message.lower()
+    if any(token in message for token in ("标题", "description", "meta", "元描述", "metadata")):
+        return "draft_metadata"
+    if any(token in message for token in ("faq", "常见问题", "问答")):
+        return "draft_faq"
+    if any(token in message for token in ("json-ld", "jsonld", "结构化数据", "schema")):
+        return "draft_json_ld"
+    if any(token in message for token in ("定义块", "摘要块", "首屏", "文案", "草案")):
+        return "draft_definition_block"
+    if any(token in message for token in ("证据", "引用", "来源", "支撑")):
+        return "request_evidence"
+    if any(token in message for token in ("比较", "取舍", "方案", "路线")):
+        return "compare_options"
+    if any(token in message for token in ("为什么", "解释", "原因", "识别")):
+        return "explain_issue"
+    if any(token in message for token in ("优先", "先改", "清单", "行动", "问题", "优化")):
+        return "prioritize_actions"
+    return "ask_unknown"
+
+
+def _top_strategy_evidence_refs(safe_pack: ConversationSafePack, *, limit: int = 6) -> list[str]:
+    refs: list[str] = []
+    for step in safe_pack.safe_prompt_pack.strategy_plan.strategy_steps:
+        for ref in step.evidence_refs:
+            if ref in safe_pack.known_evidence_refs and ref not in refs:
+                refs.append(ref)
+                if len(refs) >= limit:
+                    return refs
+    return refs
+
+
+def _top_strategy_method_refs(safe_pack: ConversationSafePack, *, limit: int = 6) -> list[str]:
+    refs: list[str] = []
+    for step in safe_pack.safe_prompt_pack.strategy_plan.strategy_steps:
+        for ref in step.method_refs:
+            if ref in safe_pack.known_method_refs and ref not in refs:
+                refs.append(ref)
+                if len(refs) >= limit:
+                    return refs
+    return refs
