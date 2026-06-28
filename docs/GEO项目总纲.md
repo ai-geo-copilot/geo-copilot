@@ -1,248 +1,195 @@
 # GEO 项目总纲
 
-状态：active  
-最后更新：2026-06-17  
-当前定位：Evidence-first 单 URL GEO Copilot
+状态：active
+最后更新：2026-06-28
+当前定位：Evidence-first GEO Product Workbench
 
-## 1. 项目定义
+## 1. 产品定义
 
-本项目不是通用聊天机器人，不是大规模爬虫平台，也不是先做一个通用 RAG 问答系统再“顺便支持网页分析”。
+本项目不是通用聊天机器人，不是通用 RAG 平台，也不是“先做一个 AI 对话壳，再顺便支持网页分析”。
 
-本项目的正确产品定义是：
+本项目的正式产品定义是：
 
-> 输入一个 URL，系统先把页面变成可追踪、可校验的 `PageEvidencePack`，再基于规则和 GEO 方法给出结构化优化建议。
+> 面向页面与站点资产的 GEO 审计、修复建议、资产草案与验证工作台。
 
-### 1.1 GEO 的项目内定义
+这里的 GEO 指的是：
 
-本项目中的 GEO 不是“AI SEO 关键词优化”，也不是承诺某个生成式平台一定引用页面。它是一个页面级诊断框架，用来判断单个 URL 是否具备被生成式答案系统安全使用的条件。
+> 判断一个页面是否能被生成式答案系统安全抓取、稳定选择、可信吸收、带证据复用，并在安全边界内生成可执行优化建议。
 
-项目内 GEO 必须同时覆盖五个维度：
+它不是传统 SEO 排名保证，也不是对任何外部平台引用结果的承诺。
 
-| 维度 | 含义 | 主要承载模块 |
+## 2. 核心用户结果
+
+用户使用本产品，不是为了“聊一聊网页”，而是为了拿到以下结果：
+
+1. 页面为什么不容易被生成式答案系统选择。
+2. 页面哪些内容可以被吸收，哪些内容缺事实、缺证据、缺结构。
+3. 哪些问题优先处理，依据是什么。
+4. 可以直接复制或导出的哪些资产值得修改页面。
+5. 修改后应如何再次验证是否变好。
+
+因此产品的核心输出应优先是：
+
+- evidence-backed report
+- issue cards
+- action plan
+- asset drafts
+- traceable copilot explanation
+
+而不是无边界的自由聊天。
+
+## 3. 五条 GEO 主轴
+
+所有正式模块、字段、规则和报告都必须围绕同一套 GEO 语义：
+
+| 主轴 | 含义 | 主要承载模块 |
 |---|---|---|
-| `selection_readiness` | 页面是否可抓取、可解析、实体清晰、结构化信号可用 | `PageEvidencePack`、`RuleChecks` |
-| `absorption_readiness` | 页面是否有可被答案吸收的定义、数字事实、比较、步骤、FAQ、证据块 | `PageContentProfile`、`RuleChecks` |
-| `claim_evidence_support` | 核心主张是否有 nearby evidence、来源、日期、范围或可验证支撑 | `PageContentProfile`、`RuleChecks`、`Validator` |
-| `structure_readability` | macro / meso / micro 结构是否利于抽取、引用和复用 | parser、content blocks、rule engine |
-| `safe_grounded_generation` | 外部网页内容是否被当作不可信数据，模型输出是否绑定 `evidence_ref` / `method_ref` | prompt pack、DeepSeek、Validator |
+| `selection_readiness` | 页面是否可抓取、可识别、可进入候选来源 | acquisition、page evidence、rule checks |
+| `absorption_readiness` | 页面是否有可被答案吸收和复用的内容单元 | page content profile、rule checks |
+| `claim_evidence_support` | 主张是否具备可追踪证据和口径 | page content profile、rule checks、validator |
+| `structure_readability` | 页面结构是否利于抽取、引用和复用 | parser、content blocks、heuristics、rule checks |
+| `safe_grounded_generation` | 外部网页内容进入模型后是否仍保持边界、引用和校验 | safe prompt、llm gateway、validator |
 
-因此本项目报告的第一阶段口径是 `GEO readiness`、`citation readiness` 和 `absorption readiness`，不是“真实平台排名提升”或“真实引用率提升”。
+任何看似合理的新功能，如果不能映射到这五条主轴之一，就不应进入核心主链路。
 
-目标完整链路：
+## 4. 产品形态
 
-```text
-用户输入 URL
--> 安全抓取和页面解析
--> PageEvidencePack
--> PageContentProfile
--> RuleChecks
--> MethodSelector / GEO Methods
--> DeepSeek 结构化诊断
--> 报告与追问
-```
-
-当前开发阶段只承诺先把前半段做稳：
+长期正确的产品形态不是“单 URL 玩具”，而是：
 
 ```text
-用户输入 URL
--> 安全抓取和页面解析
--> PageEvidencePack
--> RuleChecks
--> 基础报告
+Project / Site
++ URL / Upload / Sitemap intake
++ Page-level GEO analysis
++ Evidence-backed report
++ Copilot explanation and asset drafting
++ Re-analysis and comparison
++ Later: site-level aggregation and monitoring
 ```
 
-## 2. 产品目标
+但无论产品如何扩展，页面级可追溯证据始终是最小不可替代单元。
 
-第一阶段要交付的不是“看起来聪明”的对话，而是“证据扎实”的页面分析。
+## 5. 长期不变量
 
-用户最终应得到：
+以下原则属于架构与产品不变量，后续不应轻易破坏：
 
-1. 页面是否可被稳定抓取和解析。
-2. 页面结构、schema、crawl access、内容证据密度的问题列表。
-3. 每条问题对应的 `evidence_ref`。
-4. 后续可叠加的方法依据 `method_ref`。
-5. 优先级明确的修改动作，而不是泛泛 SEO 建议。
+### 5.1 Evidence First
 
-当前阶段不要求一次性把所有能力做完。产品价值的第一根地基是高质量 `PageEvidencePack`，不是 RAG，也不是模型对话。
+- 页面事实必须先进入确定性的 `PageEvidencePack`。
+- 模型不是事实来源。
+- 规则和报告必须能回到 `evidence_ref`。
 
-## 3. 硬边界
+### 5.2 Deterministic Core, Guarded LLM
 
-### 3.1 Page Evidence 是事实基座
+- 领域核心优先由确定性模块完成。
+- LLM 主要负责归纳、重写、排序、资产草案和解释。
+- 所有模型输出必须进入 schema 和业务 validator。
 
-系统中的页面事实必须先由后端确定性提取，再进入后续规则或模型链路。
+### 5.3 Stable Public Read Models
 
-这意味着：
+- 对外 API 暴露稳定 read model，不暴露内部所有中间对象。
+- 内部 artifact 可以演进，但公开 contract 不能随意震荡。
 
-- 不让模型直接读 URL。
-- 不把整页原始 HTML 原样塞给模型。
-- 不让“网页识别能力”成为 DeepSeek 的职责。
-- 页面字段、正文块、结构化数据、辅助文件状态都需要稳定引用。
+### 5.4 State Has a Source of Truth
 
-### 3.2 DeepSeek 是诊断器，不是事实来源
+- 当前实现状态一律以 `DEVELOPMENT_STATUS.md` 为准。
+- 长期业务状态应逐步从文件快照演进为数据库事实源。
+- snapshot / object storage 主要承担调试与回放职责。
 
-DeepSeek 负责：
+### 5.5 Product Before Framework
 
-- 对已提取证据做结构化归纳。
-- 对规则结果和方法依据做优先级排序。
-- 输出可校验 JSON。
-- 生成资产草案和追问答案。
+- 新框架只解决已被证明确认的问题。
+- 不为了“更 AI”而牺牲证据可追溯性和系统可验证性。
 
-DeepSeek 不负责：
+## 6. 核心领域对象
 
-- 访问 URL。
-- 决定网页上真实存在什么。
-- 自行补齐缺失事实。
-- 用“经验判断”替代 `evidence_ref`。
+这些对象是产品的长期语言基础：
 
-### 3.3 GEO Methods 和 Page Evidence 必须分离
-
-系统中始终有两类输入：
-
-| 类型 | 作用 |
+| 对象 | 角色 |
 |---|---|
-| `PageEvidencePack` | 证明页面实际上有什么、缺什么 |
-| `GeoMethodCards` / `GEO_METHODS` | 提供判断标准、优化方法、资产模板和输出约束 |
+| `PageEvidencePack` | 页面事实包，承载 fetch、metadata、structure、structured data、content blocks 和 evidence refs |
+| `PageContentProfile` | GEO 抽象层，表达 page type、entity、answer units、claims、statistics、readiness 和 risk |
+| `RuleChecks` | 确定性问题判断层，输出 finding、failure type、severity 和 evidence refs |
+| `MethodPack / RetrievedMethodPack` | GEO 方法体系与当前分析命中的方法集合 |
+| `StrategyPlan` | 将已选方法转成修复顺序和约束 |
+| `SafePromptPack` | 提供给模型的安全结构化上下文 |
+| `DiagnosisReport / CopilotTurn / AssetDraft` | 面向用户消费的产品读模型 |
 
-两者不能混成一份无边界 prompt，也不能让方法库覆盖页面事实。
+这些对象之间的顺序关系必须保持清晰：
 
-### 3.4 先做专家工具，不做通用平台
+```text
+Evidence
+-> Profile
+-> Rules
+-> Methods
+-> Strategy
+-> Safe Prompt
+-> LLM Outputs
+-> Report / Copilot / Assets
+```
 
-当前正式非目标：
+## 7. 产品承诺边界
 
-- 通用客服式聊天机器人。
-- 全站批量爬取与监控平台。
-- 默认接入外部工作流平台作为核心后端。
-- 一开始就上复杂向量检索或多阶段 Agent 编排。
-- 宣称真实 AI 排名、真实引用提升或结果保证。
+本项目可以承诺：
 
-## 4. 核心对象
+- 提供 evidence-backed 的页面级 GEO 诊断。
+- 提供带方法依据的优先级建议。
+- 生成受约束的资产草案。
+- 提供可复盘、可复测、可演进的工作台体验。
 
-### 4.1 `PageEvidencePack`
+本项目不承诺：
 
-页面事实包，是后续所有分析的唯一事实输入。至少应包含：
+- 保证搜索或引用排名。
+- 保证 ChatGPT、Perplexity、Google AI Overview 等平台一定引用页面。
+- 自动替用户修改线上站点。
+- 用一个模型调用替代事实提取、规则判断和报告生成的全部工作。
 
-- 抓取信息：输入 URL、最终 URL、状态码、类型、重定向链、哈希。
-- 页面元数据：title、description、canonical、lang、OG。
-- 页面结构：headings、links、images、tables、正文块。
-- 结构化数据：JSON-LD 和 schema 类型。
-- 辅助文件：robots.txt、sitemap.xml、llms.txt、llms-full.txt。
-- 稳定的 `evidence_ref`。
+## 8. 长期演进模型
 
-### 4.2 `PageContentProfile`
+长期迭代应按成熟度推进，而不是按“功能数量”推进：
 
-页面 GEO 抽象层，把 `PageEvidencePack` 中的事实转成可诊断对象。当前阶段不要求先完整实现独立模块，但 `PageEvidencePack v1` 与 `RuleChecks v1` 的字段设计必须为它预留稳定位置。
-
-至少应表达：
-
-- `page_type`、`search_intent`、`primary_entity`。
-- `content_outline` 与 macro / meso / micro 结构信号。
-- `answer_units`：definition、fact、comparison、procedure、faq、quote。
-- `claim_candidates`、`evidence_candidates`、`statistics`。
-- `structured_data_profile` 与 visible-content alignment。
-- `selection_readiness`、`absorption_readiness`、`content_gaps`。
-- `prompt_injection_risk` 与不可传模型片段标记。
-
-### 4.3 `RuleChecks`
-
-确定性规则输出，负责在不依赖模型的情况下先给出基础判断。规则不能只检查 metadata，还要逐步覆盖 GEO 维度：
-
-- 抓取与解析：URL safety、HTML 类型、重定向、主内容置信度。
-- selection：实体清晰、canonical、schema、breadcrumb、语言。
-- absorption：定义单元、比较单元、步骤单元、summary block。
-- claim-evidence：无来源主张、数字无口径、引用不支撑主张。
-- safety：hidden instruction、HTML comment prompt injection、raw HTML 禁止直传模型。
-
-### 4.4 `GeoMethodCards`
-
-当前阶段优先使用人工维护的种子方法卡片，而不是直接上完整 RAG。
-
-### 4.5 `DiagnosisReport`
-
-后续阶段的结构化诊断结果。它必须引用 `evidence_ref`，并在方法链路启用后引用 `method_ref`。
-
-## 5. 阶段路线
-
-### 5.1 Phase 1：Page Evidence v1 + RuleChecks v1
+### 8.1 页面级可信分析
 
 目标：
 
-- 建成 `apps/api/app/page_evidence`。
-- 对真实 URL 输出 `PageEvidencePack`。
-- 产出无模型也可用的基础规则报告。
+- 单 URL / HTML upload 可稳定进入 evidence-first 分析链路。
+- 规则、方法、诊断和追问都有证据边界。
 
-这一步完成前，不应把复杂度转移到 RAG、双模型调用或前端花哨交互。
-
-### 5.2 Phase 2：MethodSelector v0
+### 8.2 可执行报告与资产
 
 目标：
 
-- 基于 `geo_methods.seed.json` 或等价种子卡片实现方法选择。
-- 先用 metadata filter + 规则映射 + 少量关键词匹配完成高可控选择。
-- 建立 `method_ref` 和报告之间的稳定绑定。
+- 报告成为主产品输出。
+- Copilot 变成解释器和局部草案生成器，而不是主界面。
 
-当前不把 pgvector 设为前置条件。
-
-### 5.3 Phase 3：DeepSeek Diagnosis
+### 8.3 项目与站点工作台
 
 目标：
 
-- 在已有 `PageEvidencePack`、`RuleChecks`、`GeoMethodCards` 基础上接入 DeepSeek JSON 输出。
-- 让模型做归纳、优先级和资产草案，而不是做抓取和事实识别。
+- 用户按 Project / Site 管理分析。
+- 支持历史、比较、再分析和部分批量输入。
 
-### 5.4 Phase 4：扩展检索、记忆和动态页面能力
+### 8.4 监控与运营
 
-只在有明确压力时再引入：
+目标：
 
-- Postgres 持久化分析结果。
-- pgvector / hybrid retrieval。
-- 动态页面 fallback。
-- 追问记忆和历史对比。
+- 支持定期复测、趋势、回归提醒和资产导出。
 
-## 6. 当前关键判断
+只有在前一层真正稳定后，才进入下一层。
 
-### 6.1 复杂 RAG 不是 MVP 前提
+## 9. 持续高质量迭代原则
 
-当前方法规模预计有限，先做种子方法卡片和可解释 selector，更容易验证质量，也更符合当前代码基线。
+为了让这个产品能长线迭代，所有设计都应满足：
 
-### 6.2 `GeoSemanticReadout` 不是当前主链路前置项
+1. 领域语言稳定：对象名、边界和责任清晰。
+2. 状态来源清晰：当前事实、业务事实、调试产物不混淆。
+3. 可替换性明确：抓取、模型、存储和工作流都可以替换，但领域核心不被吞掉。
+4. 质量门禁前置：contract、fixture、eval、validator、artifact trace 必须先于“更聪明”的模型行为。
+5. 文档边界稳定：主文档讲原则，状态文件讲事实，补充文档讲专项方案。
 
-把 DeepSeek 用作“网页 GEO 语义抽象器”可以作为后续研究方向，但不应压在当前主链路上。当前主链路先依赖确定性 `PageEvidencePack` 和 `RuleChecks`。
+## 10. 相关文档
 
-### 6.3 Page Evidence 的质量决定后续一切
-
-没有稳定证据包时：
-
-- RuleChecks 会飘。
-- MethodSelector 会乱。
-- DeepSeek 会泛化。
-- 报告无法追溯。
-
-因此当前优先级必须继续锁定 `apps/api/app/page_evidence`。
-
-## 7. MVP 完成定义
-
-本项目的第一个真正可用版本，至少要满足：
-
-1. `POST /api/analyses` 能对真实 URL 产出 `PageEvidencePack`。
-2. 无 DeepSeek 时也能返回基础规则报告。
-3. 每条 finding 都能定位到 `evidence_ref`。
-4. 对错误页面、非 HTML、重定向异常和受限 URL 有稳定失败输出。
-5. 文档、契约和开发状态与代码现状一致。
-
-## 8. 非目标
-
-当前明确不做：
-
-- 默认浏览器渲染抓取。
-- 通用知识问答平台。
-- 把整份论文知识库全文塞入 prompt。
-- 未经验证的“排名提升”承诺。
-- 为了架构好看而提前拆微服务。
-
-## 9. 文档索引
-
-- `GEO实施路线与架构决策.md`：当前架构和模块边界。
-- `GEO架构技术栈与工具整合建议.md`：技术选型和实现策略。
-- `GEO五人团队分工协作与验收标准.md`：团队流程和阶段验收。
-- `GEO论文优化方法知识库.md`：GEO 方法来源和种子卡片依据。
-- `DEVELOPMENT_STATUS.md`：当前开发事实和已验证状态。
+- `DEVELOPMENT_STATUS.md`：当前实现事实与验证状态
+- `GEO实施路线与架构决策.md`：系统蓝图与演进路线
+- `GEO架构技术栈与工具整合建议.md`：技术采用门禁
+- `模块开发补充/商业产品化重构与Agent架构方案.md`：长期产品化与工作流补充设计
+- `模块开发补充/知识库架构技术开发方案.md`：Method Pack / Strategy 补充设计

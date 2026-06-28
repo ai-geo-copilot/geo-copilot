@@ -6,16 +6,20 @@ from pathlib import PurePath
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel, Field, HttpUrl
 
+from ..auth import AuthenticatedUser
 from ..conversations.models import ConversationHistory, ConversationMessageRequest, CopilotTurn
 from ..conversations.service import ConversationService, ConversationServiceError
 from ..diagnosis.models import DeepSeekDiagnosis
 from ..diagnosis.service import DiagnosisService, DiagnosisServiceError
 from ..llm.errors import DeepSeekAuthError, DeepSeekBillingError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
+from ..jobs import JobConflictError, JobNotFoundError, JobService
+from ..db.models import JobRecord
 from ..methods.models import RetrievedMethodPack, StrategyPlan
 from ..page_input.models import PageInputContext
 from ..page_evidence.service import PageEvidenceService
 from ..page_evidence.models import AnalysisResult, PageEvidencePack, PublicPageContentProfile, RuleCheck
 from ..page_evidence.page_content_profile import build_public_page_content_profile
+from .llm import get_optional_authenticated_user
 
 router = APIRouter(prefix="/analyses", tags=["analyses"])
 
@@ -40,11 +44,27 @@ def get_conversation_service(request: Request) -> ConversationService:
     return request.app.state.conversation_service
 
 
+def get_job_service(request: Request) -> JobService:
+    return request.app.state.job_service
+
+
 class AnalysisCreateRequest(BaseModel):
     url: HttpUrl
     language: str = Field(default="zh-CN", min_length=2, max_length=16)
     business_type: str | None = Field(default=None, max_length=80)
     target_keywords: list[str] = Field(default_factory=list, max_length=20)
+
+
+class AnalysisJobCreateRequest(BaseModel):
+    url: HttpUrl
+    language: str = Field(default="zh-CN", min_length=2, max_length=16)
+    business_type: str | None = Field(default=None, max_length=80)
+    target_keywords: list[str] = Field(default_factory=list, max_length=20)
+    target_audience: str | None = Field(default=None, max_length=160)
+    conversion_goal: str | None = Field(default=None, max_length=160)
+    market: str | None = Field(default=None, max_length=80)
+    brand_facts: list[str] = Field(default_factory=list, max_length=20)
+    forbidden_claims: list[str] = Field(default_factory=list, max_length=20)
 
 
 class AnalysisResponse(BaseModel):
@@ -57,6 +77,11 @@ class AnalysisResponse(BaseModel):
     page_content_profile: PublicPageContentProfile | None = None
     rule_checks: list[RuleCheck] = Field(default_factory=list)
     snapshot_dir: str | None = None
+
+
+class AnalysisJobResponse(BaseModel):
+    analysis_id: UUID
+    job: JobRecord
 
 
 def _to_response(result: AnalysisResult) -> AnalysisResponse:
@@ -91,6 +116,56 @@ def create_analysis(
         target_keywords=payload.target_keywords,
     )
     return _to_response(service.analyze_safe(url, payload.language, input_context))
+
+
+@router.post("/jobs", response_model=AnalysisJobResponse, status_code=status.HTTP_202_ACCEPTED)
+def create_analysis_job(
+    payload: AnalysisJobCreateRequest,
+    service: JobService = Depends(get_job_service),
+) -> AnalysisJobResponse:
+    url = str(payload.url)
+    input_context = PageInputContext(
+        source_type="url",
+        input_url=url,
+        language=payload.language,
+        business_type=payload.business_type,
+        target_keywords=payload.target_keywords,
+        target_audience=payload.target_audience,
+        conversion_goal=payload.conversion_goal,
+        market=payload.market,
+        brand_facts=payload.brand_facts,
+        forbidden_claims=payload.forbidden_claims,
+    )
+    job = service.enqueue_analysis(url, payload.language, input_context)
+    return AnalysisJobResponse(analysis_id=job.analysis_id, job=job)
+
+
+@router.get("/{analysis_id}/jobs/{job_id}", response_model=AnalysisJobResponse)
+def get_analysis_job(
+    analysis_id: UUID,
+    job_id: UUID,
+    service: JobService = Depends(get_job_service),
+) -> AnalysisJobResponse:
+    try:
+        job = service.get_analysis_job(analysis_id, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return AnalysisJobResponse(analysis_id=analysis_id, job=job)
+
+
+@router.post("/{analysis_id}/jobs/{job_id}/retry", response_model=AnalysisJobResponse, status_code=status.HTTP_202_ACCEPTED)
+def retry_analysis_job(
+    analysis_id: UUID,
+    job_id: UUID,
+    service: JobService = Depends(get_job_service),
+) -> AnalysisJobResponse:
+    try:
+        job = service.retry_analysis(analysis_id, job_id)
+    except JobNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except JobConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return AnalysisJobResponse(analysis_id=analysis_id, job=job)
 
 
 @router.post("/uploads", response_model=AnalysisResponse, status_code=status.HTTP_200_OK)
@@ -198,9 +273,10 @@ def get_analysis_strategy(
 def create_analysis_diagnosis(
     analysis_id: UUID,
     service: DiagnosisService = Depends(get_diagnosis_service),
+    current_user: AuthenticatedUser | None = Depends(get_optional_authenticated_user),
 ) -> DeepSeekDiagnosis:
     try:
-        return service.generate(analysis_id)
+        return service.generate(analysis_id, current_user)
     except DiagnosisServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except DeepSeekAuthError as exc:
@@ -229,9 +305,10 @@ def create_follow_up(
     analysis_id: UUID,
     payload: ConversationMessageRequest,
     service: ConversationService = Depends(get_conversation_service),
+    current_user: AuthenticatedUser | None = Depends(get_optional_authenticated_user),
 ) -> CopilotTurn:
     try:
-        return service.create_turn(analysis_id, payload)
+        return service.create_turn(analysis_id, payload, current_user)
     except ConversationServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except DeepSeekAuthError as exc:

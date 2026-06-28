@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from ..auth import AuthenticatedUser, UserIdentityError
 from ..llm.deepseek_client import build_llm_client
 from ..llm.errors import DeepSeekAuthError, DeepSeekBillingError, DeepSeekClientError, DeepSeekInvalidResponseError, DeepSeekUnavailableError
 from ..llm.provider_store import (
     ProviderConfigPublic,
     ProviderConfigRequest,
     ProviderConfigStore,
+    ProviderConfigStoreError,
     ProviderTestResponse,
     to_public_config,
 )
@@ -20,25 +22,49 @@ def get_provider_store(request: Request) -> ProviderConfigStore:
     return request.app.state.provider_config_store
 
 
+def get_optional_authenticated_user(request: Request) -> AuthenticatedUser | None:
+    resolver = request.app.state.user_identity_resolver
+    try:
+        return resolver.resolve_request_user(request)
+    except UserIdentityError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/provider", response_model=ProviderConfigPublic)
-def get_provider_config(store: ProviderConfigStore = Depends(get_provider_store)) -> ProviderConfigPublic:
-    return store.public_config()
+def get_provider_config(
+    store: ProviderConfigStore = Depends(get_provider_store),
+    current_user: AuthenticatedUser | None = Depends(get_optional_authenticated_user),
+) -> ProviderConfigPublic:
+    try:
+        return store.public_config(current_user)
+    except ProviderConfigStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.put("/provider", response_model=ProviderConfigPublic)
 def set_provider_config(
     payload: ProviderConfigRequest,
     store: ProviderConfigStore = Depends(get_provider_store),
+    current_user: AuthenticatedUser | None = Depends(get_optional_authenticated_user),
 ) -> ProviderConfigPublic:
     if payload.provider == "anthropic":
         raise HTTPException(status_code=422, detail="anthropic provider is not supported yet")
-    settings = store.set_override(payload)
+    try:
+        settings = store.set_override(payload, user=current_user)
+    except ProviderConfigStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return to_public_config(settings, configured=True)
 
 
 @router.delete("/provider", response_model=ProviderConfigPublic)
-def clear_provider_config(store: ProviderConfigStore = Depends(get_provider_store)) -> ProviderConfigPublic:
-    settings = store.clear_override()
+def clear_provider_config(
+    store: ProviderConfigStore = Depends(get_provider_store),
+    current_user: AuthenticatedUser | None = Depends(get_optional_authenticated_user),
+) -> ProviderConfigPublic:
+    try:
+        settings = store.clear_override(user=current_user)
+    except ProviderConfigStoreError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return to_public_config(settings, configured=bool(settings.api_key))
 
 

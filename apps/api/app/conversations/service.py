@@ -6,14 +6,16 @@ from uuid import UUID, uuid4
 
 from pydantic import ValidationError
 
+from apps.api.app.auth import AuthenticatedUser
 from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult, build_llm_client
-from apps.api.app.llm.provider_store import ProviderConfigStore
+from apps.api.app.llm.provider_store import ProviderConfigStore, ProviderConfigStoreError
 from apps.api.app.llm.settings import DeepSeekSettings
 from apps.api.app.page_evidence.storage import SnapshotStorage
 
 from .context import build_conversation_safe_pack
 from .models import ConversationHistory, ConversationMessageRequest, ConversationSafePack, CopilotTurn
 from .prompt import CopilotPromptBuilder
+from .repository import ConversationRepository, SnapshotConversationRepository
 from .validator import validate_copilot_turn
 
 
@@ -32,14 +34,21 @@ class ConversationService:
         settings: DeepSeekSettings | None = None,
         provider_store: ProviderConfigStore | None = None,
         prompt_builder: CopilotPromptBuilder | None = None,
+        repository: ConversationRepository | None = None,
     ) -> None:
         self._storage = storage
         self._client = client
         self._settings = settings or DeepSeekSettings.from_env()
         self._provider_store = provider_store
         self._prompt_builder = prompt_builder or CopilotPromptBuilder()
+        self._repository = repository or SnapshotConversationRepository(storage)
 
-    def create_turn(self, analysis_id: UUID, request: ConversationMessageRequest | dict[str, object]) -> CopilotTurn:
+    def create_turn(
+        self,
+        analysis_id: UUID,
+        request: ConversationMessageRequest | dict[str, object],
+        user: AuthenticatedUser | None = None,
+    ) -> CopilotTurn:
         if not isinstance(request, ConversationMessageRequest):
             request = ConversationMessageRequest.model_validate(request)
         if not request.message.strip():
@@ -53,7 +62,7 @@ class ConversationService:
         if input_context is None:
             raise ConversationServiceError("analysis input context not found", status_code=404)
 
-        history = self._storage.load_conversation_history(analysis_id)
+        history = self._repository.load_history(analysis_id)
         safe_pack = build_conversation_safe_pack(
             analysis_id=analysis_id,
             input_context=input_context,
@@ -63,11 +72,11 @@ class ConversationService:
             turn_user_context=request.turn_user_context,
             diagnosis=self._storage.load_deepseek_diagnosis(analysis_id),
         )
-        client = self._client or self._build_client()
+        client = self._client or self._build_client(user)
         result = client.create_text_completion(
             messages=self._prompt_builder.build_chat_messages(safe_pack),
             user_id=f"analysis_{str(analysis_id).replace('-', '')}",
-            max_tokens=self._effective_settings().max_tokens,
+            max_tokens=self._effective_settings(user).max_tokens,
         )
         try:
             turn = CopilotTurn.model_validate_json(result.content)
@@ -79,22 +88,22 @@ class ConversationService:
         except ValueError as exc:
             turn = self._repair_invalid_turn(turn, safe_pack, str(exc))
             turn = validate_copilot_turn(turn, safe_pack)
-        self._storage.save_copilot_turn(analysis_id, request, turn, self._build_meta(result))
+        self._repository.save_turn(analysis_id, request, turn, self._build_meta(result, user))
         return turn
 
     def get_history(self, analysis_id: UUID) -> ConversationHistory:
         if self._storage.load_result(analysis_id) is None:
             raise ConversationServiceError("analysis not found", status_code=404)
-        return self._storage.load_conversation_history(analysis_id)
+        return self._repository.load_history(analysis_id)
 
-    def _build_client(self) -> DeepSeekClient:
-        settings = self._effective_settings()
+    def _build_client(self, user: AuthenticatedUser | None = None) -> DeepSeekClient:
+        settings = self._effective_settings(user)
         if not settings.api_key:
             raise ConversationServiceError("copilot provider not configured", status_code=503)
         return build_llm_client(settings)
 
-    def _build_meta(self, result: DeepSeekCompletionResult) -> dict[str, object]:
-        settings = self._effective_settings()
+    def _build_meta(self, result: DeepSeekCompletionResult, user: AuthenticatedUser | None = None) -> dict[str, object]:
+        settings = self._effective_settings(user)
         return {
             "provider": settings.provider,
             "model": result.model,
@@ -108,9 +117,12 @@ class ConversationService:
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
 
-    def _effective_settings(self):
+    def _effective_settings(self, user: AuthenticatedUser | None = None):
         if self._provider_store is not None:
-            return self._provider_store.get_effective()
+            try:
+                return self._provider_store.get_effective(user)
+            except ProviderConfigStoreError as exc:
+                raise ConversationServiceError(str(exc), status_code=exc.status_code) from exc
         return self._settings.to_provider_settings()
 
     def _wrap_plain_text_turn(

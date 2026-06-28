@@ -2,8 +2,15 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import httpx
+from sqlalchemy import inspect
 
 from apps.api.app.db import JobRecord, SnapshotAnalysisRepository, SnapshotJobRepository
+from apps.api.app.db.models import AnalysisRecord
+from apps.api.app.db.sqlalchemy_store import (
+    SqlAlchemyAnalysisRepository,
+    SqlAlchemyJobRepository,
+    create_sqlalchemy_engine,
+)
 from apps.api.app.page_evidence.fetcher import PageFetcher
 from apps.api.app.page_evidence.service import PageEvidenceService
 from apps.api.app.page_evidence.storage import SnapshotStorage
@@ -118,3 +125,56 @@ def test_page_evidence_service_reads_results_through_repository(tmp_path: Path) 
 
     assert result is None
     assert str(repository.requested_id) == "22222222-2222-2222-2222-222222222222"
+
+
+def test_sqlalchemy_repositories_persist_analysis_index_and_jobs(tmp_path: Path) -> None:
+    engine = create_sqlalchemy_engine(f"sqlite:///{tmp_path / 'geo.db'}")
+    storage = SnapshotStorage(root_dir=tmp_path / "snapshots")
+    analysis_repository = SqlAlchemyAnalysisRepository(engine, storage)
+    job_repository = SqlAlchemyJobRepository(engine)
+    analysis_repository.create_schema()
+
+    analysis_id = uuid4()
+    record = AnalysisRecord(
+        analysis_id=analysis_id,
+        input_url="https://example.com/",
+        status="completed",
+        language="zh-CN",
+        snapshot_dir=str(storage.get_snapshot_dir(analysis_id)),
+    )
+    job = JobRecord(
+        job_id=uuid4(),
+        analysis_id=analysis_id,
+        job_type="analysis",
+        status="queued",
+        attempts=0,
+        input_hash="input-hash",
+        artifact_refs=[],
+        trace_id="trace-1",
+    )
+
+    analysis_repository.save_record(record)
+    job_repository.save(job)
+
+    assert analysis_repository.get_record(analysis_id) == record
+    assert job_repository.get(analysis_id, job.job_id) == job
+    assert job_repository.list_for_analysis(analysis_id) == [job]
+
+
+def test_sqlalchemy_schema_contains_commercial_state_tables(tmp_path: Path) -> None:
+    engine = create_sqlalchemy_engine(f"sqlite:///{tmp_path / 'commercial-state.db'}")
+    storage = SnapshotStorage(root_dir=tmp_path / "snapshots")
+
+    SqlAlchemyAnalysisRepository(engine, storage).create_schema()
+
+    table_names = set(inspect(engine).get_table_names())
+    assert {
+        "users",
+        "workspaces",
+        "projects",
+        "analyses",
+        "jobs",
+        "conversation_threads",
+        "messages",
+        "provider_configs",
+    } <= table_names

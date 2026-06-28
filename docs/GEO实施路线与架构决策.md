@@ -1,400 +1,358 @@
 # GEO 实施路线与架构决策
 
-状态：active  
-最后更新：2026-06-17  
+状态：active
+最后更新：2026-06-28
 依赖文档：`GEO项目总纲.md`
 
-## 1. 当前架构结论
+## 1. 本文档角色
 
-当前项目应采用：
+本文件是正式系统蓝图。它回答：
 
-> Single-URL Page Evidence Pipeline -> PageContentProfile -> RuleChecks -> MethodSelector -> DeepSeek Diagnosis -> Validator
+- 系统按什么层次组织。
+- 哪些上下文是核心，哪些是外围。
+- 业务状态由谁拥有。
+- 长任务应如何拆分。
+- 当前架构如何演进到长期产品形态。
 
-但当前实现阶段只要求先落地前两段：
+它不负责记录“今天具体做完了什么”，这些内容一律交给 `DEVELOPMENT_STATUS.md`。
 
-> Single-URL Page Evidence Pipeline -> RuleChecks
+## 2. 架构结论
 
-这里的 `PageContentProfile` 是目标架构中的 GEO 抽象层；当前不把它作为独立模块前置，但 Page Evidence v1 和 RuleChecks v1 必须为它的字段口径预留空间。没有高质量页面证据，后面的 GEO 抽象、MethodSelector、DeepSeek、追问和报告都会变成不稳定的上层建筑。
+长期正确架构不是“一个大 service + 若干路由 + 一个模型 client”，而是：
 
-## 2. GEO 模块嵌入原则
+```text
+Product API
++ Application Use Cases
++ Workflow Runtime
++ Deterministic GEO Domain Engine
++ Infrastructure Adapters
++ Stable Read Models
+```
 
-所有模块都必须嵌入同一套 GEO 语义，而不是只传递通用网页字段：
+简化表达：
 
-| 模块 | 必须承载的 GEO 语义 |
-|---|---|
-| Fetcher / URL Safety | `selection_readiness` 的访问、安全和重定向边界 |
-| Parser / Content Blocks | macro / meso / micro 结构、可复用 answer units 的原始证据 |
-| Structured Data | schema 类型、属性完整性、与可见内容一致性 |
-| PageEvidence Builder | 稳定 `evidence_ref`、字段来源、主内容置信度 |
-| PageContentProfile | `page_type`、`primary_entity`、claim/evidence、selection/absorption readiness |
-| Rule Engine | 将 GEO 维度转成确定性 finding 和 failure_type |
-| MethodSelector | 根据 page_type、failure_type、asset_type、evidence_level 选方法 |
-| DeepSeek Diagnosis | 只基于结构化事实和方法卡片做归纳，不创造事实 |
-| Validator | 校验 `evidence_ref`、`method_ref`、JSON schema 与安全边界 |
+```text
+FastAPI Product API
++ durable state
++ workflow orchestration
++ deterministic GEO engine
++ guarded LLM gateway
++ report and copilot read models
+```
 
-## 3. 当前目标架构
+## 3. 分层模型
 
 ```mermaid
 flowchart TD
-  A["Frontend URL Input"] --> B["POST /api/analyses"]
-  B --> C["URL Safety Validator"]
-  C --> D["Static HTTP Fetcher"]
-  D --> E["Auxiliary Fetcher"]
-  D --> F["HTML Parser"]
-  E --> G["PageEvidence Builder"]
-  F --> G
-  G --> H["Rule Check Engine"]
-  G --> I["Snapshot Storage"]
-  H --> J["API Response / Base Report"]
-  I --> J
+    A["Web / API Client"] --> B["Product API"]
+    B --> C["Application Use Cases"]
+    C --> D["Workflow Runtime"]
+    D --> E["Domain Engine"]
+    C --> F["Read Model Builders"]
+    C --> G["Infrastructure Adapters"]
+    G --> H["Postgres / Durable State"]
+    G --> I["Snapshot / Object Storage"]
+    G --> J["LLM Provider Gateway"]
+    G --> K["Crawler Fallback / External Services"]
+    E --> L["PageEvidencePack"]
+    E --> M["PageContentProfile"]
+    E --> N["RuleChecks"]
+    E --> O["MethodSelector / StrategyPlanner"]
+    J --> P["Diagnosis / Copilot / Asset Drafts"]
+    F --> Q["Report / Conversation / Asset Read Models"]
 ```
 
-当前正式主链路中，不把下列模块设为前置：
-
-- 向量检索。
-- 双模型调用。
-- 浏览器渲染。
-- 队列系统。
-- 复杂数据库落库。
-
-## 4. 后续完整架构
-
-在 Page Evidence v1 稳定后，再按顺序接入：
-
-```mermaid
-flowchart TD
-  A["PageEvidencePack"] --> B["PageContentProfile"]
-  B --> C["RuleChecks"]
-  A --> C
-  B --> D["MethodSelector"]
-  C --> D
-  D --> E["Selected Method Pack"]
-  A --> F["DeepSeek Diagnosis"]
-  B --> F
-  C --> F
-  E --> F
-  F --> G["JSON Validator"]
-  G --> H["Report Builder"]
-  H --> I["Report UI / Follow-up"]
-```
-
-## 5. 核心决策
-
-### 5.1 先完整做 `page_evidence`
-
-`apps/api/app/page_evidence` 是当前唯一完整模块优先级。理由已经被代码现状和开发状态共同证明：
-
-- `POST /api/analyses` 已完成同步单 URL 分析闭环。
-- `PageEvidencePack v1`、`RuleChecks v1`、snapshot 与 API base report 已冻结。
-- 当前公开 API 已冻结为 `page_evidence + page_content_profile(minimal public subset) + rule_checks + snapshot_dir`，完整内部 `PageContentProfile` 不对外暴露。
-
-因此当前不应把主精力转到 DeepSeek、RAG 或复杂前端。
-
-### 5.2 抓取层采用“自控安全边界 + 成熟解析库”
-
-当前推荐策略：
-
-```text
-URL safety 自研
-+ httpx 静态抓取
-+ selectolax DOM 提取
-+ trafilatura 正文提纯
-+ extruct 结构化数据提取
-```
-
-原因：
-
-- SSRF、安全校验、重定向验证必须由我们自己控制。
-- HTML 主体提取、DOM 遍历、结构化数据提取不必重复造轮子。
-- 这样能把复杂度放在真正的产品边界，而不是重复实现通用解析算法。
-
-当前阶段补充：
-
-- `selectolax` 先作为 DOM 提取正式实现接入，替换临时标准库 parser。
-- `parser.py` 继续只承担 DOM 字段、links、images、tables、基础内容块和 JSON-LD script 收集。
-- `extruct` 负责 embedded structured data extraction。
-- `trafilatura` 负责 clean markdown / main content extraction。
-- 解析栈按 `selectolax -> extruct -> trafilatura` 的顺序增量接入，service 与 schema 尽量保持稳定。
-
-### 5.3 Page Evidence v1 默认静态 HTML，不默认浏览器
-
-当前不把 Playwright 或外部抓取服务设为默认路径。
-
-原因：
-
-- 当前最紧迫的问题不是“任何页面都抓到”，而是“已抓到的页面要稳定、安全、可追踪”。
-- 动态渲染会立刻引入成本、时延、指纹、隔离和运维复杂度。
-- 很多页面在静态 HTML 下已经足够提取 metadata、schema、heading 和主内容。
-
-何时升级：
-
-- 真实样本反复出现“静态 HTML 主体为空，但浏览器可见正文存在”的情况。
-- 这种失败已经影响 Page Evidence v1 的目标样本覆盖率。
-
-### 5.4 Page Evidence v1 先落调试快照，不先依赖数据库
-
-当前决定：
-
-> Page Evidence v1 先以文件快照为主，数据库落库不是前置条件。
-
-建议产物：
-
-```text
-data/analyses/{analysis_id}/
-  raw.html
-  clean.md
-  evidence.json
-  rule_checks.json
-```
-
-原因：
-
-- 当前仓库数据库 migration 仍未本地验证。
-- Page Evidence v1 的主要需求是调试、可追踪和 fixture 对比，不是复杂查询。
-- 文件快照更适合快速迭代 evidence schema。
-
-何时升级：
-
-- 需要跨分析查询、历史对比、用户级持久化或多实例共享状态时，再引入数据库主存储。
-
-### 5.5 MethodSelector 先于复杂 RAG
-
-当前决定：
-
-> 在方法规模仍可人工维护时，先用种子卡片加 deterministic selector，不默认上 pgvector。
-
-推荐输入：
-
-- `page_type`
-- `failure_types`
-- `asset_needs`
-- `language`
-
-推荐选择逻辑：
-
-```text
-固定 base methods
-+ page_type 过滤
-+ failure_type 过滤
-+ asset_type 过滤
-+ 少量关键词补充
-```
-
-何时升级为向量检索：
-
-- 种子卡片规模明显增长。
-- metadata filter + 关键词召回已无法稳定命中 golden queries。
-- 需要更强语义召回且有明确评估基线。
-
-### 5.6 DeepSeek 放在事实、GEO 抽象与方法之后
-
-DeepSeek 的正确位置是：
-
-```text
-PageEvidencePack + PageContentProfile + RuleChecks + Selected Methods -> DeepSeek Diagnosis
-```
-
-不推荐的路径：
-
-- `URL -> DeepSeek`
-- `raw HTML -> DeepSeek`
-- `PageEvidencePack -> DeepSeek GeoSemanticReadout -> 再做全部主链路`
-
-说明：
-
-- `GeoSemanticReadout` 可以作为未来研究项。
-- 当前主链路先不引入第二次模型调用。
-- 模型应当消费已经整理好的事实和方法，而不是替代事实层。
-
-### 5.7 当前先同步执行，不引入外部队列
-
-当前 `POST /api/analyses` 可以先同步执行或使用轻量 background task。
-
-何时升级：
-
-- 分析耗时已持续影响用户体验。
-- 需要并发排队、重试、作业监控和取消能力。
-
-在这些信号出现前，不引入消息队列。
-
-## 6. 模块边界
-
-### 6.1 `apps/api/app/page_evidence`
-
-当前建议目录：
-
-```text
-page_evidence/
-  models.py
-  errors.py
-  url_safety.py
-  fetcher.py
-  parser.py
-  structured_data.py
-  content_blocks.py
-  rule_checks.py
-  storage.py
-  service.py
-```
+### 3.1 Product API
 
 职责：
 
-- URL 校验和 DNS/IP 安全判断。
-- 主 HTML 抓取和辅助文件抓取。
-- metadata / schema / 正文 / 内容块提取。
-- `PageEvidencePack` 构建。
-- `RuleChecks` 生成。
-- 快照落盘。
-- 为后续 `PageContentProfile` 提供 page type、entity、claim/evidence、structure、schema alignment 的稳定原始信号。
+- 对外 contract
+- auth / permission boundary
+- error shape
+- pagination / filtering / idempotency boundary
 
-当前内部设计约束：
+约束：
 
-- `parser.py` 是 DOM extraction module，不负责 HTTP、规则判断或快照写入。
-- `service.py` 继续作为编排层，不感知 `selectolax` 具体选择器细节。
-- `structured_data.py` 统一承接 `extruct` 输出，并向 `PageEvidencePack` 映射稳定 evidence refs。
+- 不直接编排底层解析或模型细节。
+- 不直接写 snapshot 文件。
 
-### 6.2 `apps/api/app/page_profile` 或 `page_evidence/abstraction.py`
+### 3.2 Application Use Cases
 
-后续建议目录：
+职责：
+
+- `CreateAnalysisJob`
+- `GetAnalysisReport`
+- `GenerateDiagnosis`
+- `SendCopilotMessage`
+- `ManageProviderConfig`
+
+约束：
+
+- 只协调 domain、workflow、repository、gateway。
+- 不承担领域计算细节。
+
+### 3.3 Workflow Runtime
+
+职责：
+
+- 多步骤状态
+- 恢复与重试
+- streaming / human-in-the-loop
+- traceable execution
+
+约束：
+
+- 只编排，不重写领域规则。
+- 只在持久状态和 use case 边界明确后引入更复杂 runtime。
+
+### 3.4 Domain Engine
+
+职责：
+
+- 页面事实提取
+- GEO 抽象
+- 规则判断
+- 方法选择
+- 策略规划
+- safe prompt 构建
+
+约束：
+
+- 不 import FastAPI、数据库 session 或具体 LLM SDK。
+- 领域对象应可单元测试、fixture 测试和离线回放。
+
+### 3.5 Infrastructure Adapters
+
+职责：
+
+- DB repository
+- job worker / queue
+- object storage
+- provider gateway
+- dynamic crawl fallback
+- observability adapters
+
+约束：
+
+- 可替换，不污染领域模型。
+
+## 4. 核心上下文划分
+
+长期看，系统至少应包含以下上下文：
+
+| 上下文 | 责任 | 说明 |
+|---|---|---|
+| `analysis` | intake、evidence、profile、rules | 页面分析主链路 |
+| `methods` | method pack、selector、strategy | 方法与修复路径 |
+| `diagnosis` | safe prompt、structured diagnosis | 面向报告的结构化模型输出 |
+| `conversations` | copilot thread、turn validation、history | 面向解释与追问的对话层 |
+| `reports` | issue/action/asset/report read model | 用户消费层，不等于内部 artifact |
+| `llm` | provider config、gateway、usage、trace | 模型接入与治理 |
+| `jobs` | durable state machine、claim、retry、recovery | 长任务执行与恢复 |
+| `projects` | workspace、project、site、history | 产品化工作台状态 |
+
+规则：
+
+- `analysis` 是领域入口。
+- `reports` 是用户主输出。
+- `conversations` 依附于 `analysis` / `reports`，不应反客为主。
+- `llm` 是共享基础设施，而不是业务主上下文。
+
+## 5. 数据所有权
+
+长期可持续产品必须区分三类数据：
+
+### 5.1 业务状态
+
+应由数据库持有：
+
+- user / workspace / project / site
+- analysis index and status
+- jobs
+- conversation threads and messages
+- provider configs
+- eval runs
+
+### 5.2 大型分析产物
+
+应由 snapshot / object storage 持有：
+
+- raw HTML
+- clean markdown
+- evidence artifacts
+- profile artifacts
+- methods / strategy / safe prompt artifacts
+- diagnosis artifacts
+
+### 5.3 用户消费读模型
+
+应由 application 层从业务状态与 artifact 组装：
+
+- analysis report
+- issue cards
+- action plan
+- asset draft view
+- copilot thread view
+
+规则：
+
+- 数据库是业务状态事实源。
+- artifact storage 是调试与回放源。
+- read model 是面向产品界面的衍生层。
+
+## 6. 工作流边界
+
+### 6.1 AnalyzePage Workflow
+
+长期职责：
 
 ```text
-page_profile/
-  models.py
-  builder.py
+validate input
+-> acquire page
+-> parse page
+-> build profile
+-> run rules
+-> select methods
+-> plan strategy
+-> build safe prompt
+-> persist artifacts and state
+-> optionally build report read model
 ```
 
-或在早期以 `page_evidence/abstraction.py` 形式存在。
+### 6.2 Diagnosis Workflow
 
-职责：
-
-- 从 `PageEvidencePack` 生成 `PageContentProfile`。
-- 识别 `page_type`、`primary_entity`、`search_intent`。
-- 产出 `answer_units`、`claim_candidates`、`evidence_candidates`、`statistics`。
-- 计算 `selection_readiness` 与 `absorption_readiness` 的输入信号。
-
-当前约束：
-
-- 不用 DeepSeek 生成该层事实。
-- 不把 raw HTML、隐藏文本或 comments 作为可信输入。
-- 每个抽象字段都必须能回到 `evidence_ref`。
-
-### 6.3 `apps/api/app/methods`
-
-后续目录建议：
+长期职责：
 
 ```text
-methods/
-  models.py
-  selector.py
-  geo_methods.seed.json
+load safe prompt
+-> call structured llm
+-> validate output
+-> repair / retry policy
+-> persist diagnosis
+-> update report read model
 ```
 
-职责：
+### 6.3 Copilot Workflow
 
-- 维护种子方法卡片。
-- 根据页面问题选择相关方法。
-- 输出稳定 `method_ref`。
-
-### 6.4 `apps/api/app/diagnosis`
-
-后续目录建议：
+长期职责：
 
 ```text
-diagnosis/
-  models.py
-  prompt_builder.py
-  deepseek_client.py
-  validator.py
-  service.py
+load conversation state
+-> route intent
+-> build conversation safe pack
+-> call structured llm
+-> validate turn
+-> persist turn
+-> refresh thread read model
 ```
 
-职责：
+### 6.4 Report Workflow
 
-- DeepSeek JSON 输出。
-- schema 校验。
-- 无效 JSON 重试与降级。
+长期职责：
 
-### 6.5 `apps/api/app/reports`
+```text
+load analysis bundle
+-> compile issue/action/asset cards
+-> export markdown/json/pdf
+-> persist report artifacts
+```
 
-职责：
+### 6.5 Site Workflow
 
-- 组装 API 返回视图。
-- 区分事实、推断和未知项。
-- 后续为前端提供 evidence/method 展开视图。
+后期职责：
 
-## 7. Page Evidence v1 目标
+```text
+discover urls
+-> batch analyses
+-> aggregate site insights
+-> compare trends
+-> schedule re-checks
+```
 
-必须完成：
+## 7. 公开 contract 策略
 
-- 只允许 `http` / `https`。
-- 拦截 localhost、私网、回环、链路本地、metadata IP、保留地址。
-- 手动验证每一跳重定向目标。
-- 限制超时、重定向次数和响应体大小。
-- 拒绝非 HTML 主响应。
-- 提取 title、description、canonical、lang、headings、links、images、tables、JSON-LD。
-- 并发抓取 robots.txt、sitemap.xml、llms.txt、llms-full.txt。
-- 为字段和内容块生成稳定 `evidence_ref`。
-- 输出基础规则报告。
-- 为后续 GEO 抽象保留主内容置信度、schema 类型、结构层级、claim/evidence 线索。
+### 7.1 对外只暴露稳定 read model
 
-## 8. 升级触发条件
+公开 API 应尽量提供：
 
-### 8.1 何时加数据库
+- analysis summary
+- report view
+- methods / strategy read views
+- conversation history
+- asset drafts
 
-- 需要持久保存分析历史。
-- 需要跨分析查询或聚合。
-- 需要多用户、多实例共享状态。
+不要把所有内部中间对象直接暴露给前端拼装。
 
-### 8.2 何时加 pgvector
+### 7.2 内部 artifact 可以版本化演进
 
-- 方法卡片规模增长到手工 selector 明显失效。
-- 已有 golden queries 证明当前召回不足。
-- 需要语义检索而不是简单规则过滤。
+允许内部 artifact 逐步增强，但要求：
 
-### 8.3 何时加动态页面 fallback
+- schema 版本清晰
+- round-trip 可验证
+- 不直接破坏公开 contract
 
-- 静态 HTML 在目标样本中频繁失真。
-- 失真页面对业务价值较高。
-- 已有可靠的隔离、超时和成本控制方案。
+### 7.3 任何 LLM 输出都不是公开 contract 的直接事实源
 
-### 8.4 何时加队列
+模型输出必须先经过：
 
-- 同步分析已明显拖慢接口体验。
-- 需要可见排队、重试和后台执行。
+1. schema validation
+2. business validation
+3. read model compilation
 
-## 9. 当前不采用
+之后才能进入公开产品界面。
 
-- 不把 Postgres + pgvector 写成当前主链路前置依赖。
-- 不把 `GeoSemanticReadout` 写成当前必经步骤。
-- 不把 Playwright、Firecrawl、Dify、RAGFlow、FastGPT 写成核心实现依赖。
-- 不让模型替代 URL 抓取、解析和规则判断。
-- 不为了未来扩展提前拆微服务。
+## 8. 演进路线
 
-## 10. 实施顺序
+### Phase A：产品化地基
 
-### Phase 1
+目标：
 
-- Page Evidence v1
-- RuleChecks v1
-- `/api/analyses` 基础报告
-- 为 `PageContentProfile v1` 固化必要 evidence 字段
+- 明确数据库与 artifact 的状态边界
+- job state machine 成为统一长任务机制
+- provider config、conversation、analysis history 有稳定持久层
+- 开始收敛 report read model
 
-### Phase 2
+### Phase B：工作流拆分
 
-- PageContentProfile v1
-- GeoMethod seed cards
-- MethodSelector v0
-- `method_ref` 贯通
+目标：
 
-### Phase 3
+- 把大 service 内的多步骤过程抽成 workflow-friendly steps
+- 每一步有稳定输入输出对象
+- 为 durable workflow runtime 做好边界准备
 
-- DeepSeek Diagnosis
-- JSON Validator
-- 资产草案与追问
+### Phase C：报告优先
 
-### Phase 4
+目标：
 
-- 数据库存储
-- 向量检索
-- 动态页面 fallback
-- 历史分析与监控
+- 报告成为前端主产品面
+- methods / strategy / diagnosis 不再由前端散拼
+- Copilot 成为报告解释层
+
+### Phase D：项目化与站点化
+
+目标：
+
+- 引入 workspace / project / site 视角
+- 批量输入、比较和再分析
+
+### Phase E：可恢复 workflow runtime
+
+目标：
+
+- 在有明确长任务恢复、流式进度和人审压力后，引入 LangGraph 或等价 runtime
+
+## 9. 架构规则
+
+为保证长线可维护性，所有后续改动都应遵守：
+
+1. 先建清晰边界，再引框架。
+2. 先收敛 read model，再优化界面交互。
+3. 先有 durable state 和 eval，再做 agent 化。
+4. 任何新能力都不能绕开 evidence-first 主链路。
+5. 任何新文档都不能和 `DEVELOPMENT_STATUS.md` 重复维护当前状态。
+
+## 10. 相关文档
+
+- `GEO项目总纲.md`：产品定义与不变量
+- `GEO架构技术栈与工具整合建议.md`：技术采用门禁
+- `模块开发补充/商业产品化重构与Agent架构方案.md`：长期产品化和 LangGraph 增量引入补充方案

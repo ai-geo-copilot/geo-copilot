@@ -31,7 +31,7 @@ class DeepSeekSettings:
 
     @classmethod
     def from_env(cls) -> "DeepSeekSettings":
-        dotenv = _load_dotenv()
+        dotenv = load_project_dotenv()
         return cls(
             api_key=_env_value("DEEPSEEK_API_KEY", dotenv, ""),
             base_url=_env_value("DEEPSEEK_BASE_URL", dotenv, "https://api.deepseek.com"),
@@ -57,7 +57,7 @@ def _env_value(name: str, dotenv: dict[str, str], default: str) -> str:
     return os.environ.get(name) or dotenv.get(name) or default
 
 
-def _load_dotenv() -> dict[str, str]:
+def load_project_dotenv() -> dict[str, str]:
     env_path = Path.cwd() / ".env"
     if not env_path.exists():
         return {}

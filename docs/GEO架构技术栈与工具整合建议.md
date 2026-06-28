@@ -1,322 +1,204 @@
 # GEO 架构技术栈与工具整合建议
 
-状态：active  
-最后更新：2026-06-17  
+状态：active
+最后更新：2026-06-28
 前置文档：`GEO项目总纲.md`、`GEO实施路线与架构决策.md`
 
-## 1. 技术选型原则
+## 1. 本文档角色
 
-当前技术路线遵循四条原则：
+本文件不是“依赖清单”，而是正式技术选型门禁。它回答：
 
-1. 安全边界自己控制。
-2. 通用解析能力优先复用成熟库。
-3. 当前阶段优先支持 Page Evidence v1，不为未来规模提前上重型基础设施。
-4. 每项引入的技术都要回答“现在为什么必须需要”。
+- 某项技术当前应放在哪一层。
+- 现在为什么需要，为什么还不需要。
+- 采用条件与拒绝条件是什么。
+- 哪些替换是安全的，哪些替换会伤到领域核心。
 
-## 2. 当前推荐技术栈
+## 2. 技术选型原则
 
-| 领域 | 当前默认选择 | 当前不作为前置 |
+长期可持续迭代遵循以下原则：
+
+1. 安全边界优先自己控制。
+2. 领域核心优先保持确定性、可测试、可回放。
+3. 基础设施可以替换，但不向领域核心泄漏。
+4. 新框架必须解决已被证明确认的问题。
+5. 先有状态、评测和读模型，再谈更复杂的 agent runtime。
+
+## 3. 当前批准的技术栈分层
+
+| 层 | 当前推荐 | 角色 |
 |---|---|---|
-| API | `FastAPI` + `Pydantic v2` | 工作流平台式后端 |
-| HTTP 抓取 | `httpx` + `dnspython` + `ipaddress` | 默认浏览器渲染、默认外部抓取服务 |
-| DOM 提取 | `selectolax` | 只靠正则或只靠 BeautifulSoup |
-| 正文提纯 | `trafilatura` | 自研正文算法 |
-| 结构化数据 | `extruct` | 只抽 JSON-LD 忽略其他结构化信号 |
-| 存储 | `data/analyses/{id}` 文件快照 | 当前阶段强依赖数据库 |
-| 测试 | `pytest` + fixture HTML | 只做手工临时验证 |
-| GEO 抽象 | `PageContentProfile` builder + deterministic rules | 让 LLM 先替代页面理解 |
-| 方法选择 | 种子方法卡片 + deterministic selector | 直接上 pgvector / Qdrant |
-| 诊断模型 | DeepSeek JSON Output（后续阶段） | 让模型直接抓网页 |
+| Product API | `FastAPI` + `Pydantic v2` | 路由、contract、生命周期、错误边界 |
+| Domain Parsing | `httpx` + `selectolax` + `trafilatura` + `extruct` | 安全抓取、DOM、正文、结构化数据 |
+| Durable State | `Postgres` + `SQLAlchemy` | analysis / jobs / conversation / provider config 等业务状态 |
+| Artifact Storage | 本地 snapshot，后续抽象为 object storage | raw / clean / evidence / diagnosis 等大产物 |
+| Jobs / Workers | 内建 job state machine + worker 进程 | durable claim / retry / recovery |
+| LLM Access | provider-neutral gateway | DeepSeek / OpenAI-compatible 等统一接入 |
+| Frontend | `Next.js` + `TypeScript` | workbench、report、settings |
+| Testing | `pytest` + fixture + contract/schema tests | 回归、schema 对齐、artifact round-trip |
+| Observability | 结构化日志 + trace hooks + eval harness | 成本、质量、失败率、回放 |
 
-## 3. HTTP 抓取层建议
+说明：
 
-### 3.1 客户端生命周期
+- 这些技术是“当前批准路线”，不是永远唯一选择。
+- 替换必须遵守 `GEO项目总纲.md` 中的长期不变量。
 
-推荐使用应用级可复用 `httpx.AsyncClient`，由 FastAPI lifespan 管理。
+## 4. 各层采用规则
 
-不要：
+### 4.1 API 层
 
-- 每次请求新建短生命周期 client。
-- 为了“兼容差站点”默认关闭 TLS 校验。
-- 把自动跟随重定向作为默认路径。
+当前保持：
 
-### 3.2 抓取方式
+- `FastAPI`
+- `Pydantic v2`
+- 公开 schema / contract tests
 
-推荐：
+规则：
 
-- `stream()` 先看响应头，再增量读取 body。
-- 在 header 和 body 两层都限制响应大小。
-- 只接受 HTML 主响应。
-- 明确记录 status、headers、elapsed、sha256、redirect chain。
+- 路由只做 HTTP 边界，不承载领域编排细节。
+- 公开 contract 稳定优先于内部 artifact 完整暴露。
 
-### 3.3 SSRF 防护
+### 4.2 抓取与解析层
 
-必须覆盖：
+当前保持：
 
-- scheme 限制为 `http` / `https`。
-- 域名存在性检查。
-- A / AAAA 解析。
-- 私网、回环、链路本地、保留地址、metadata IP 拦截。
-- 每一跳重定向目标重新校验。
+- `httpx`：安全可控抓取
+- `selectolax`：DOM / metadata / structure extraction
+- `trafilatura`：正文提纯与 clean markdown
+- `extruct`：JSON-LD / Microdata / RDFa / OpenGraph 等结构化数据
 
-### 3.4 辅助文件抓取
+规则：
 
-与主页面解耦并发获取：
+- SSRF、防跳转越界、超时、体积限制必须自控。
+- 解析库用于通用提取，不替代领域规则。
+- 解析结果必须落入稳定 evidence refs。
 
-- `/robots.txt`
-- `/sitemap.xml`
-- `/llms.txt`
-- `/llms-full.txt`
+### 4.3 状态与存储层
 
-这些抓取应当容错。主页面成功时，辅助文件 404 不应打断分析主流程。
+当前批准：
 
-## 4. 解析层建议
+- `Postgres`：业务状态事实源
+- `SQLAlchemy`：仓储和 schema 管理
+- snapshot / object storage：调试、回放与大 artifact
 
-### 4.1 `selectolax`
+规则：
 
-适合：
+- 业务状态不要依附在 snapshot 目录结构上。
+- snapshot 不直接承担用户权限、任务状态或持久 provider 管理。
 
-- title、meta、canonical、lang、headings 提取。
-- links、images、tables、局部 DOM 块提取。
-- 建立稳定的块级 `evidence_ref`。
+### 4.4 Jobs / Workflow 层
 
-当前接入策略：
+当前批准：
 
-- 先只替换 `parser.py` 的 DOM 提取层，保持 `PageEvidencePack` 外部结构稳定。
-- 先不把 clean markdown 和 broader structured data extraction 一起并入 `selectolax` phase。
-- 优先验证 metadata、heading、anchor text、table text、content blocks 和 `evidence_ref` 稳定性。
+- 统一 job state machine
+- 独立 worker 进程
 
-### 4.2 `trafilatura`
+当前未默认批准：
 
-适合：
-
-- 去除导航、页脚、广告噪声。
-- 输出 clean text / markdown。
-- 为 RuleChecks 和后续模型上下文提供高密度文本。
-
-当前接入策略：
-
-- 先只替换 `clean.md` 和 parser 返回的 `clean_markdown` 来源。
-- 不让 `trafilatura` 直接决定 metadata、headings 或 evidence refs。
-
-### 4.3 `extruct`
-
-适合：
-
-- JSON-LD
-- Microdata
-- RDFa
-- Open Graph 等结构化信息
-
-这比只手工扫 `script[type=\"application/ld+json\"]` 更完整。
-
-当前接入策略：
-
-- `structured_data.py` 统一调用 `extruct.extract(...)`。
-- 先把 `json_ld`、`opengraph`、`microdata`、`microformat`、`rdfa`、`dublincore` 映射到结构化 evidence。
-- 暂不把 `extruct` 输出直接并回 `metadata`，避免来源边界不清。
-
-## 5. Page Evidence 输出建议
-
-当前阶段的 `PageEvidencePack` 至少要覆盖：
-
-- `input`
-- `fetch`
-- `metadata`
-- `crawl_access`
-- `structure`
-- `structured_data`
-- `content_blocks`
-- `rule_check_inputs`
-- `storage`
-
-其中最关键的是稳定引用：
-
-- 字段级 `evidence_ref`
-- 块级 `evidence_ref`
-
-没有引用能力，后面的 RuleChecks、MethodSelector 和 DeepSeekDiagnosis 都无法可追溯。
-
-## 6. GEO 抽象输出建议
-
-`PageEvidencePack` 负责“页面有什么”，`PageContentProfile` 负责“这些事实对 GEO 意味着什么”。二者不能混成一份自由文本 prompt。
-
-`PageContentProfile v1` 建议包含：
-
-- `page_type`：article、product、docs、landing、comparison、home、unknown。
-- `primary_entity`：实体名称、类型、别名和 evidence refs。
-- `content_outline`：标题层级、区块类型、summary 和 evidence refs。
-- `answer_units`：definition、fact、comparison、procedure、faq、quote。
-- `claim_candidates` 与 `evidence_candidates`：主张、证据、support label、source URL。
-- `statistics`：数值、单位、时间、口径、来源。
-- `structured_data_profile`：schema 类型、属性完整性、visible alignment。
-- `boilerplate_metrics`：main content confidence、boilerplate ratio、first-screen summary。
-- `selection_readiness` 与 `absorption_readiness`：分数只作诊断辅助，不作真实排名承诺。
-- `prompt_injection_risk`：隐藏指令、comments、meta/script/style 等风险标记。
-
-实现策略：
-
-- 先用确定性 heuristic 和 fixture 固化字段口径。
-- 所有抽象字段必须保留 `evidence_ref`。
-- claim/evidence 初期可以粗粒度匹配，规则口径要保守。
-- 不把 `clean.md` 全文直接当作模型事实来源。
-
-## 7. 存储与调试建议
-
-当前建议：
-
-```text
-data/analyses/{analysis_id}/
-  raw.html
-  clean.md
-  evidence.json
-  rule_checks.json
-```
-
-好处：
-
-- 调试直接。
-- fixture 对比简单。
-- schema 迭代成本低。
-- 不受当前数据库未验证状态阻塞。
-
-后续如果确实需要历史查询、共享状态或多用户，再引入数据库持久化。
-
-## 8. 方法库技术路线
-
-### 8.1 当前阶段
-
-推荐：
-
-- `geo_methods.seed.json`
-- `selector.py`
-- metadata 过滤
-- 规则映射
-- 少量关键词补充
-
-理由：
-
-- 方法规模初期不大。
-- 可解释性强。
-- 调试和人工 review 更直接。
-
-### 8.2 后续阶段
-
-当方法卡片规模增长并且 golden queries 证明召回不稳定时，再升级到：
-
-- `Postgres`
-- `pgvector`
-- full-text search
-- hybrid retrieval
-
-当前不把这条链路写成 M1 的技术前置。
-
-## 9. DeepSeek 接入建议
-
-DeepSeek 只在后续阶段接入，且只消费结构化输入：
-
-```text
-PAGE_EVIDENCE
-PAGE_CONTENT_PROFILE
-RULE_CHECKS
-GEO_METHODS
-OUTPUT_SCHEMA
-```
-
-推荐：
-
-- `response_format: {"type":"json_object"}`
-- 明确 JSON 约束
-- schema 校验
-- 无效 JSON 重试
-- 降级为规则报告
-
-不推荐：
-
-- 把 raw HTML 直接给模型。
-- 把 HTML comments、隐藏 DOM、script/style、站点声明型自由文本直接给模型。
-- 用模型替代规则引擎。
-- 让模型自行搜索网页或挑选事实。
-- 接受没有 `evidence_ref` 或 `method_ref` 的诊断项。
-
-## 10. 可选外部工具的正确位置
-
-### 10.1 Dify / FastGPT / RAGFlow
-
-结论：
-
-- 可作为外部参考或未来外围集成对象。
-- 不作为当前核心后端。
+- 外部重型队列
+- durable graph runtime
 
 原因：
 
-- 它们擅长工作流、RAG 或 agent 外壳。
-- 本项目的核心价值在于 Page Evidence、RuleChecks、MethodSelector 和可追溯诊断，而不是通用聊天壳。
+- 先把状态机、恢复、仓储、artifact 边界做稳。
+- 工作流复杂度应由真实恢复需求驱动，而不是先上平台。
 
-### 10.2 Jina Reader / Firecrawl / Playwright
+### 4.5 LLM 层
 
-结论：
+当前批准：
 
-- 可以作为未来 acquisition fallback。
-- 当前不写入主链路默认路径。
+- provider-neutral gateway
+- structured output first
+- schema + business validator
+- request/response trace 元数据
 
-正确顺序应当是：
+规则：
+
+- 业务 service 不应直接依赖某个具体 provider client。
+- prompt builder、gateway、validator 应可独立测试。
+- raw HTML、comments、script/style、未裁剪大文本不进模型。
+
+### 4.6 Frontend 层
+
+当前批准：
+
+- `Next.js`
+- `TypeScript`
+- typed client / response guards
+
+规则：
+
+- 前端不长期承担散落 read model 的拼装责任。
+- 工作台、报告页、设置页应成为稳定产品面，而不是 landing demo 的附属品。
+
+## 5. 技术引入门禁
+
+| 候选 | 正确位置 | 采用条件 | 拒绝条件 |
+|---|---|---|---|
+| `LangGraph` | workflow runtime | 已有多步骤持久状态、恢复、人审或流式压力 | 只是把同步函数调用换个外壳 |
+| `LangChain` | 少量 model/tool adapter | 需要统一 adapter，而不污染领域核心 | 试图用 agent loop 重写 evidence / rules / methods |
+| `Pydantic AI` | llm gateway / eval 辅助 | 结构化输出、依赖注入和 eval 成本明显升高 | 引入后造成双重建模和职责混乱 |
+| `Playwright` / `Crawl4AI` | acquisition fallback | 静态抓取在高价值页面上系统性失败 | 只是为了“更像 AI 产品” |
+| `pgvector` | research / retrieval enhancement | 方法规模和召回复杂度已超 deterministic selector | 当前方法卡仍可人工维护 |
+| `LlamaIndex` | research KB / ingestion / llms.txt | 后台研究、文档 ingestion、资产生成链路需要 | 想把它塞进在线 evidence 主链路 |
+| `Dify` / `RAGFlow` / `FastGPT` | 内部研究或外围运营 | 作为非核心辅助后台 | 作为正式主链路后端 |
+
+## 6. 安全与数据边界
+
+### 6.1 网页内容边界
+
+- 网页永远是外部不可信数据。
+- parser、profile、rule checks 决定它如何被结构化。
+- 模型消费的是安全裁剪后的结构化输入，而不是整页自由文本。
+
+### 6.2 Provider 边界
+
+- API key 不明文回显。
+- provider config 应朝加密持久化演进。
+- request hash / response hash / usage / latency 应可追踪。
+
+### 6.3 输出边界
+
+- LLM 输出在进入产品界面前必须通过 schema + business validator。
+- 不允许无 `evidence_ref` 的事实项。
+- 不允许无 `method_ref` 的行动建议长期存在于正式报告层。
+
+## 7. 测试与评测策略
+
+长期质量门禁至少包括：
+
+1. fixture / parser / heuristic / rule regression
+2. schema alignment tests
+3. contract tests
+4. snapshot round-trip tests
+5. provider output regression dataset
+6. validator failure visibility
+
+原则：
+
+- fixture 是领域回归基线。
+- eval 是模型回归基线。
+- 两者不能互相替代。
+
+## 8. 当前不推荐的实现
+
+以下做法不应进入正式路线：
+
+- 让模型直接抓 URL 或判断网页事实。
+- 用一个 LangChain agent 同时承担抓取、抽取、判断和建议。
+- 让前端长期通过多接口散拼完整报告。
+- 为了未来规模提前拆微服务。
+- 用“平台壳”替代领域模型。
+- 引入新技术后不补 contract / fixture / eval 门禁。
+
+## 9. 一页摘要
 
 ```text
-Safe static fetch
--> static parse
--> 证明不足时再考虑 fallback provider
-```
-
-## 11. 当前不建议采用的实现
-
-- `verify=False` 作为默认 TLS 策略。
-- `follow_redirects=True` 后不再手动校验跳转目标。
-- 每次请求新建 `AsyncClient`。
-- 一开始就引入浏览器集群。
-- 一开始就引入向量数据库或复杂 RAG 平台。
-- 只用长 prompt 补偿事实抽取缺失。
-- 用统一 FAQ 模板代替 page-type-aware 的 GEO 诊断。
-- 用单次 AI 搜索截图证明真实 visibility 提升。
-
-## 12. 依赖演进建议
-
-### Phase 1 必需
-
-- `fastapi`
-- `pydantic`
-- `httpx`
-- `dnspython`
-- `selectolax`
-- `trafilatura`
-- `extruct`
-- `pytest`
-
-### Phase 2 可增
-
-- seed methods 相关数据文件和 selector 逻辑
-- PageContentProfile builder 和相关 schema
-
-### Phase 3 可增
-
-- DeepSeek client
-- JSON validator
-
-### Phase 4 再评估
-
-- `sqlalchemy`
-- `psycopg`
-- `pgvector`
-- 浏览器自动化或外部抓取 provider
-
-## 13. 当前技术决策摘要
-
-```text
-Backend: FastAPI + Pydantic
-Fetch: httpx + manual safety checks
-Parse: selectolax + trafilatura + extruct
-GEO Profile: deterministic builder with evidence refs
-Storage: local analysis snapshots first
-Methods: seed cards + deterministic selector first
-LLM: DeepSeek only after evidence and rules are stable
+Domain first
++ FastAPI + Pydantic for product API
++ httpx + selectolax + trafilatura + extruct for evidence
++ Postgres for durable state
++ Snapshot / object storage for artifacts
++ Provider-neutral LLM gateway with strict validators
++ Next.js for workbench and report
++ LangGraph only after workflow/state boundaries are ready
 ```

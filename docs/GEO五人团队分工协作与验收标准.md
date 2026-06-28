@@ -1,330 +1,279 @@
 # GEO Copilot 五人团队分工协作与验收标准
 
-状态：active  
-最后更新：2026-06-17  
-前置文档：`GEO项目总纲.md`、`GEO实施路线与架构决策.md`、`GEO架构技术栈与工具整合建议.md`、`GEO论文优化方法知识库.md`
+状态：active
+最后更新：2026-06-28
+前置文档：`DEVELOPMENT_STATUS.md`、`GEO项目总纲.md`、`GEO实施路线与架构决策.md`、`GEO架构技术栈与工具整合建议.md`
 
-## 1. 当前协作目标
+## 1. 协作目标
 
-五人协作的首要目标不是同时铺开全部模块，而是把当前优先级模块稳定交付：
+五人协作的目标不是“每个人各做一个模块然后拼起来”，而是：
 
 ```text
-URL
--> PageEvidencePack
--> RuleChecks
--> 基础报告
+围绕同一套 GEO 领域语言
++ 共享稳定文档边界
++ 共享一致状态事实源
++ 共享统一质量门禁
++ 逐步把系统收敛成可持续产品
 ```
 
-MethodSelector、DeepSeek Diagnosis、追问和复杂存储都属于后续阶段，不应反向阻塞当前 Page Evidence v1。
+协作的成功标准不是功能数量，而是：
 
-协作时所有角色必须使用同一套 GEO 定义：当前报告衡量的是页面级 `selection_readiness`、`absorption_readiness`、`claim_evidence_support`、`structure_readability` 和 `safe_grounded_generation`，不是传统 SEO 排名，也不是真实平台曝光承诺。
+- 核心领域不被稀释
+- 状态来源清楚
+- 变更影响面可追踪
+- 文档、contract、实现和验证口径一致
 
-## 2. 协作原则
+## 2. 五个长期工作流
 
-### 2.1 Evidence-first
-
-任何人做上层模块时，都不能绕过 `PageEvidencePack` 和 `RuleChecks`。
-
-每个 GEO 判断都必须说明它来自页面证据、方法卡片、规则推断还是模型归纳。
-
-### 2.2 Contract-first
-
-接口、schema、错误码和引用字段先对齐，再并行开发。
-
-### 2.3 Inspect-first
-
-实现前先读：
-
-1. `docs/DEVELOPMENT_STATUS.md`
-2. 当前相关设计文档
-3. 真实代码现状
-
-### 2.4 先阶段闭环，再扩范围
-
-当前阶段先完成 Page Evidence v1 的闭环，不并行拉起重型 RAG、双模型抽象或复杂前端需求。
-
-## 3. 五个角色
-
-### 3.1 Role A：API / 平台 Owner
+### 2.1 Role A：Product API / Application Owner
 
 主责：
 
-- FastAPI 应用结构。
-- 路由、错误码、状态流。
-- 应用生命周期和公共配置。
-- 测试执行入口和基础 CI。
+- FastAPI product API
+- application use cases
+- request/response contract
+- auth / permission / error shape boundary
 
-当前阶段交付：
+验收重点：
 
-- `/api/analyses` 接入 Page Evidence service。
-- 稳定响应模型。
-- 分析过程错误码和基础日志。
+- 公开 contract 稳定
+- 路由足够薄
+- application 层不回退成“大路由”
 
-当前阶段验收：
-
-- 能发起真实分析请求。
-- 不再只有 `queued` 占位响应。
-- 失败状态稳定可读。
-
-### 3.2 Role B：Page Evidence / Rule Engine Owner
+### 2.2 Role B：Domain Engine Owner
 
 主责：
 
-- URL 安全校验。
-- HTTP 抓取。
-- 辅助文件抓取。
-- HTML 解析。
-- `PageEvidencePack`。
-- `RuleChecks`。
-- 为 `PageContentProfile` 预留 page type、entity、claim/evidence、schema alignment、主内容置信度等信号。
+- page evidence
+- page content profile
+- rule checks
+- methods / strategy
+- safe prompt inputs
 
-当前阶段交付：
+验收重点：
 
-- `apps/api/app/page_evidence` 完整模块。
-- fixture 页面样本。
-- 基础规则报告。
+- 领域对象有清晰边界
+- fixture 不回归
+- evidence refs 可追踪
 
-当前阶段验收：
-
-- 支持安全 URL 校验。
-- 支持 HTML 解析和 evidence refs。
-- 支持无模型规则输出。
-- 基础规则能区分 selection blocker、absorption blocker、claim-evidence blocker 和 safety blocker。
-
-### 3.3 Role C：Method Knowledge Owner
+### 2.3 Role C：Workflow / State Owner
 
 主责：
 
-- GEO 方法来源梳理。
-- 种子方法卡片维护。
-- `MethodSelector v0` 设计。
-- 维护 `page_type`、`failure_type`、`asset_type`、`evidence_level` 的统一枚举。
-- 将论文结论转成可执行方法卡，而不是把论文全文塞入运行时 prompt。
+- repositories
+- durable jobs
+- worker / recovery
+- state transitions
+- future workflow runtime extraction
 
-当前阶段不阻塞 Page Evidence。可以并行准备：
+验收重点：
 
-- `geo_methods.seed.json`
-- 方法卡片字段设计
-- page_type / failure_type / asset_type 体系
+- 状态机完整
+- recovery 可验证
+- 业务状态与 artifact 不混淆
 
-当前阶段验收：
-
-- 方法卡片可被后续 selector 消费。
-- 不把整份知识文档直接当运行时 prompt。
-
-### 3.4 Role D：Diagnosis / Quality Owner
+### 2.4 Role D：LLM / Evaluation Owner
 
 主责：
 
-- DeepSeek JSON 输出链路。
-- 诊断 schema。
-- JSON validator。
-- 降级策略。
+- provider gateway
+- prompt builders
+- schema validation
+- business validators
+- eval dataset / trace / replay
 
-当前阶段不应要求其先实现完整模型链路。可以先准备：
+验收重点：
 
-- 输出 schema 草案
-- evidence_ref / method_ref 校验规则
-- 后续质量用例
-- DeepSeek safe input envelope：只接收结构化事实、Profile、RuleChecks、Selected Methods 和带引用短 excerpt。
-- 输出 guardrail：无证据输出、无方法引用、排名保证、虚构数字一律拦截。
+- provider 可替换
+- 非法输出可拦截
+- 回归可见
 
-### 3.5 Role E：Frontend / UX Owner
+### 2.5 Role E：Frontend / Report Experience Owner
 
 主责：
 
-- URL 输入页。
-- 分析状态展示。
-- 报告视图。
-- 后续 evidence/method 展开和追问 UI。
+- workbench
+- report UI
+- settings UI
+- copilot thread UI
+- 前端 read model 对接
 
-当前阶段交付重点：
+验收重点：
 
-- 对接真实 `POST /api/analyses`。
-- 展示基础状态和规则报告。
-- 报告 UI 术语使用 `readiness`、`evidence`、`method`、`unknown`，避免显示成真实排名承诺。
+- 界面围绕正式 read model，而不是长期拼散接口
+- 术语、边界和后端一致
+- 移动端和错误态可用
 
-当前阶段不应被要求先完成完整 Copilot 对话体验。
+## 3. 协作原则
 
-## 4. 阶段切分
+### 3.1 Inspect First
 
-### Sprint 0：脚手架
+开始任何任务前必须读：
 
-已完成：
+1. `DEVELOPMENT_STATUS.md`
+2. 对应正式主文档
+3. 当前相关代码
 
-- monorepo scaffold
-- 占位 API
-- 占位 contracts
-- 最小前端
+### 3.2 Evidence First
 
-### Sprint 1：Page Evidence v1
+任何上层功能都不能绕过 `PageEvidencePack`、`PageContentProfile`、`RuleChecks` 的主链路。
 
-目标：
+### 3.3 Contract First
 
-- URL safety
-- static fetch
-- parser
-- auxiliary files
-- `PageEvidencePack`
-- `RuleChecks`
-- `/api/analyses` 基础报告
+变更接口、schema、read model、状态机时，先明确输入输出与验收，再动代码。
 
-完成信号：
+### 3.4 Read Model First for UX
 
-- 至少 3 个真实样本 URL 或 fixture 页能稳定产出 evidence 和规则结果。
+前端需求若需要组合多个内部对象，应优先补后端 read model，而不是让前端永久散拼。
 
-### Sprint 2：MethodSelector v0
+### 3.5 Status Discipline
 
-目标：
+当前状态只在 `DEVELOPMENT_STATUS.md` 维护。其他正式文档不重复书写“今天做到了哪里”。
 
-- 种子方法卡片
-- deterministic selector
-- `method_ref` 贯通
+## 4. 变更类型与责任
 
-完成信号：
+### 4.1 领域变更
 
-- 给定典型失败类型能稳定选出相关方法。
+包括：
 
-### Sprint 3：DeepSeek Diagnosis
+- evidence/profile/rule/method/strategy 变化
 
-目标：
+必须同步：
 
-- Prompt pack
-- JSON Output
-- validator
-- 降级逻辑
+- 相关 schema / tests
+- 模块补充文档
+- `DEVELOPMENT_STATUS.md`
 
-完成信号：
+### 4.2 API / Read Model 变更
 
-- 结构化诊断可通过 schema 校验。
+包括：
 
-### Sprint 4：报告强化与追问
+- response 字段
+- report view
+- conversation response
 
-目标：
+必须同步：
 
-- 更完整的报告 UI
-- evidence/method 展开
-- 基于 `analysis_id` 的追问
+- contract tests
+- frontend types / guards
+- `DEVELOPMENT_STATUS.md`
 
-## 5. 依赖关系
+### 4.3 状态与存储变更
 
-当前必须尊重的依赖顺序：
+包括：
 
-```text
-PageEvidencePack
--> RuleChecks
--> MethodSelector
--> DeepSeekDiagnosis
--> Follow-up / Asset Drafts
-```
+- migration
+- repository
+- job state machine
+- artifact storage path or ownership
 
-这意味着：
+必须同步：
 
-- Role C 不应要求 RAG 平台先落地。
-- Role D 不应绕过 evidence/rules 直接写 prompt 逻辑。
-- Role E 不应用前端 mock 结构替代真实后端契约太久。
+- migration / repository tests
+- 架构主文档
+- `DEVELOPMENT_STATUS.md`
 
-## 6. Issue 与 PR 规则
+### 4.4 LLM 变更
 
-### 6.1 Issue
+包括：
 
-每个 issue 至少包含：
+- provider adapter
+- prompt pack
+- validators
+- retry / repair policy
 
-- 背景
-- 范围
-- 输入/输出
-- 验收标准
-- owner
-- 是否阻塞其他角色
+必须同步：
 
-### 6.2 分支
+- provider regression tests or smoke evidence
+- 相关模块补充文档
+- `DEVELOPMENT_STATUS.md`
 
-推荐短分支：
+### 4.5 前端体验变更
 
-- `feat/page-evidence`
-- `feat/api-analysis`
-- `feat/method-selector`
-- `feat/deepseek-diagnosis`
-- `feat/web-report`
-- `docs/...`
+包括：
 
-### 6.3 PR
+- 页面 IA
+- report/workbench/settings 主界面
+- read model 消费方式
 
-每个 PR 必须说明：
+必须同步：
 
-- 改了什么
-- 没改什么
-- 如何验证
-- 影响了哪些契约、文档或表结构
-- 是否需要同步更新 `DEVELOPMENT_STATUS.md`
+- 页面或类型验证
+- 前端补充文档
+- 若涉及 contract，也要更新状态文件
 
-## 7. 当前阶段验收标准
+## 5. PR 与评审规则
 
-### 7.1 API
+每个 PR 至少回答：
 
-- `POST /api/analyses` 能触发真实分析。
-- 返回稳定状态和错误码。
-- 不再停留在纯占位实现。
+1. 改了什么。
+2. 没改什么。
+3. 影响了哪些 contract / state / artifact / UI。
+4. 如何验证。
+5. 是否需要同步 `DEVELOPMENT_STATUS.md` 和哪份正式文档。
 
-### 7.2 Page Evidence
+评审时优先检查：
 
-- 拦截危险 URL。
-- 限制超时、重定向和响应体大小。
-- 提取基础 metadata、schema、content blocks。
-- 检查 robots、sitemap、llms 文件。
-- 输出稳定 `evidence_ref`。
+- 是否破坏 evidence-first
+- 是否把当前状态写进了错误的文档
+- 是否引入了不必要的框架或抽象
+- 是否让前端或模型承担了不该承担的领域职责
 
-### 7.3 RuleChecks
+## 6. Definition of Done
 
-- 缺 title/description/canonical/lang 可判断。
-- H1 异常可判断。
-- schema 缺失可判断。
-- 内容过薄或 claim 缺 evidence 有基础判断。
-- selection / absorption / claim-evidence / structure / safety 五类问题至少能映射到明确 failure_type。
-- 每条 finding 必须带 `evidence_ref`；未来方法阶段必须能继续绑定 `method_ref`。
+一个变更只有在以下条件都满足时才算完成：
 
-### 7.4 方法阶段
+1. 代码实现完成。
+2. 对应验证完成，并有明确命令或结果。
+3. 相关 contract / schema / fixture / eval 已同步。
+4. `DEVELOPMENT_STATUS.md` 已更新。
+5. 如果改变了长期设计边界，对应正式文档已更新。
 
-- 种子方法卡片结构稳定。
-- `method_ref` 可追踪。
-- 当前阶段不要求 pgvector 才算完成。
-- selector 输入必须包含 page_type、failure_type、asset_type 和 evidence_level。
-- selector 输出不能推荐没有页面证据支撑的资产草案。
+## 7. 验收车道
 
-### 7.5 模型阶段
+### 7.1 Domain 车道
 
-- JSON only
-- schema 校验
-- 无效 JSON 有重试或降级
-- 不允许无证据事实
-- 不允许 raw HTML、comments、hidden DOM 或完整 clean markdown 作为无边界 prompt 输入。
-- 每条 issue、action、asset 都必须绑定 `evidence_ref` 和 `method_ref`。
+- fixture 不回归
+- evidence refs 不丢
+- 规则与方法口径可解释
 
-## 8. Definition of Done
+### 7.2 State 车道
 
-一个功能只有同时满足以下条件才算完成：
+- job / repository / migration 可验证
+- 失败和恢复路径明确
 
-1. 代码已实现并通过对应验证。
-2. 契约、文档和状态文件已同步。
-3. 错误路径有明确处理。
-4. 不引入与当前阶段无关的额外复杂度。
-5. 变更可追踪到明确需求和验收标准。
+### 7.3 LLM 车道
 
-## 9. 当前阶段常见偏航
+- 输出有 schema
+- 输出有业务 validator
+- provider 行为可追踪
+
+### 7.4 Frontend 车道
+
+- 核心页面可用
+- 类型与 contract 对齐
+- 错误态和空态可读
+
+### 7.5 Documentation 车道
+
+- 主文档仍讲长期原则
+- 状态文件仍讲当前事实
+- 模块补充文档仍讲专项方案
+
+## 8. 常见偏航
 
 需要主动避免：
 
-- 先做复杂 RAG，再回头补页面证据。
-- 先做双模型抽象，再回头补规则引擎。
-- 先做数据库和向量检索，再回头补基础抓取。
-- 先做完整聊天 UI，再回头补真实分析能力。
+- 把产品问题伪装成“缺一个框架”。
+- 把前端缺 report read model 的问题转成前端组件堆砌。
+- 把 provider 质量问题转成 prompt 继续叠补丁。
+- 把当前状态写进多份正式文档。
+- 在 durable state、eval、read model 未稳定前，直接做多 agent 化。
 
-## 10. 最终交付口径
+## 9. 最终口径
 
-当前阶段真正算成功的交付，不是“看起来已经有很多模块”，而是：
+长期协作的目标不是“文档很多、模块很多”，而是：
 
-- 页面证据稳定。
-- 规则输出可信。
-- API 可用。
-- 文档一致。
-- 后续 MethodSelector 和 DeepSeek 有坚实地基可接。
+- 同一事实只有一个正式来源。
+- 同一设计原则只有一个稳定落点。
+- 同一产品能力有清晰 owner、边界和验收方式。

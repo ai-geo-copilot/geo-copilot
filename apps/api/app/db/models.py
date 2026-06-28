@@ -6,14 +6,17 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from apps.api.app.page_input.models import PageInputContext
+
 
 class AnalysisRecord(BaseModel):
     analysis_id: UUID
     input_url: str
-    status: Literal["completed", "failed"]
+    status: Literal["queued", "running", "completed", "failed"]
     language: str
     error_code: str | None = None
     snapshot_dir: str | None = None
+    input_context: PageInputContext | None = None
 
 
 JobType = Literal["analysis", "diagnosis", "report", "monitor", "copilot"]

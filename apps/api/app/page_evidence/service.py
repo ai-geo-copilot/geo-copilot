@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import httpx
 
-from apps.api.app.db.models import JobRecord
+from apps.api.app.db.models import AnalysisRecord, JobRecord
 from apps.api.app.db.repositories import AnalysisRepository, JobRepository, SnapshotAnalysisRepository, SnapshotJobRepository
 from apps.api.app.methods.planner import plan_strategy
 from apps.api.app.methods.selector import select_methods
@@ -60,8 +60,11 @@ class PageEvidenceService:
         url: str,
         language: str,
         input_context: PageInputContext | None = None,
+        *,
+        analysis_id: UUID | None = None,
+        record_job: bool = True,
     ) -> AnalysisResult:
-        analysis_id = uuid4()
+        analysis_id = analysis_id or uuid4()
         input_context = input_context or PageInputContext(source_type="url", input_url=url, language=language)
         normalized_url = self._fetcher.validate_public_url(url)
         fetched = self._fetcher.fetch_html(normalized_url)
@@ -71,7 +74,9 @@ class PageEvidenceService:
             html=fetched.html,
             fetch_info=fetched.fetch_info,
         )
-        return self._analyze_source(analysis_id, source, language, input_context)
+        if record_job:
+            return self._analyze_source(analysis_id, source, language, input_context)
+        return self._analyze_source(analysis_id, source, language, input_context, record_job=False)
 
     def analyze_uploaded_html(
         self,
@@ -98,6 +103,8 @@ class PageEvidenceService:
         source: PageInputSource,
         language: str,
         input_context: PageInputContext,
+        *,
+        record_job: bool = True,
     ) -> AnalysisResult:
         html = source.html
         if source.source_type == "url":
@@ -176,28 +183,38 @@ class PageEvidenceService:
             safe_prompt_pack,
             input_context,
         )
-        self._job_repository.save(
-            JobRecord(
-                job_id=uuid4(),
+        self._analysis_repository.save_record(
+            AnalysisRecord(
                 analysis_id=analysis_id,
-                job_type="analysis",
-                status="succeeded",
-                attempts=1,
-                input_hash=fetch_info.html_sha256,
-                artifact_refs=[
-                    "analysis.json",
-                    "evidence.json",
-                    "page_content_profile.json",
-                    "rule_checks.json",
-                    "retrieved_methods.json",
-                    "strategy_plan.json",
-                    "safe_prompt_pack.json",
-                    "input_context.json",
-                ],
-                started_at=datetime.now(UTC),
-                finished_at=datetime.now(UTC),
+                input_url=input_url,
+                status="completed",
+                language=language,
+                snapshot_dir=snapshot_dir,
             )
         )
+        if record_job:
+            self._job_repository.save(
+                JobRecord(
+                    job_id=uuid4(),
+                    analysis_id=analysis_id,
+                    job_type="analysis",
+                    status="succeeded",
+                    attempts=1,
+                    input_hash=fetch_info.html_sha256,
+                    artifact_refs=[
+                        "analysis.json",
+                        "evidence.json",
+                        "page_content_profile.json",
+                        "rule_checks.json",
+                        "retrieved_methods.json",
+                        "strategy_plan.json",
+                        "safe_prompt_pack.json",
+                        "input_context.json",
+                    ],
+                    started_at=datetime.now(UTC),
+                    finished_at=datetime.now(UTC),
+                )
+            )
         return result
 
     def _build_uploaded_fetch_info(self, *, html: str, final_url: str, upload_sha256: str) -> FetchInfo:

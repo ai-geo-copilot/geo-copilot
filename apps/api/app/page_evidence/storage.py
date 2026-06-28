@@ -23,6 +23,10 @@ class SnapshotStorage:
     def __init__(self, root_dir: Path | None = None) -> None:
         self._root_dir = root_dir or Path(__file__).resolve().parents[4] / "data" / "analyses"
 
+    @property
+    def root_dir(self) -> Path:
+        return self._root_dir
+
     def get_snapshot_dir(self, analysis_id: UUID) -> Path:
         return self._root_dir / str(analysis_id)
 

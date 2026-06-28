@@ -5,9 +5,10 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from apps.api.app.auth import AuthenticatedUser
 from apps.api.app.llm.deepseek_client import DeepSeekClient, DeepSeekCompletionResult, build_llm_client
 from apps.api.app.llm.errors import DeepSeekInvalidResponseError
-from apps.api.app.llm.provider_store import ProviderConfigStore
+from apps.api.app.llm.provider_store import ProviderConfigStore, ProviderConfigStoreError
 from apps.api.app.llm.settings import DeepSeekSettings
 from apps.api.app.page_evidence.storage import SnapshotStorage
 from apps.api.app.safe_prompt.validator import validate_safe_prompt_pack
@@ -39,7 +40,7 @@ class DiagnosisService:
         self._client = client
         self._prompt_builder = prompt_builder or DiagnosisPromptBuilder()
 
-    def generate(self, analysis_id: UUID) -> DeepSeekDiagnosis:
+    def generate(self, analysis_id: UUID, user: AuthenticatedUser | None = None) -> DeepSeekDiagnosis:
         if self._storage.load_result(analysis_id) is None:
             raise DiagnosisServiceError("analysis not found", status_code=404)
         safe_prompt_pack = self._storage.load_safe_prompt_pack(analysis_id)
@@ -47,11 +48,11 @@ class DiagnosisService:
             raise DiagnosisServiceError("analysis safe prompt not found", status_code=404)
         safe_prompt_pack = validate_safe_prompt_pack(safe_prompt_pack)
 
-        client = self._client or self._build_client()
+        client = self._client or self._build_client(user)
         result = client.create_json_completion(
             messages=self._prompt_builder.build_messages(safe_prompt_pack),
             user_id=f"analysis_{str(analysis_id).replace('-', '')}",
-            max_tokens=self._effective_settings().max_tokens,
+            max_tokens=self._effective_settings(user).max_tokens,
         )
         try:
             diagnosis = DeepSeekDiagnosis.model_validate_json(result.content)
@@ -61,20 +62,20 @@ class DiagnosisService:
             diagnosis = validate_deepseek_diagnosis(diagnosis, safe_prompt_pack)
         except ValueError as exc:
             raise DiagnosisServiceError("diagnosis output failed validation", status_code=422) from exc
-        self._storage.save_deepseek_diagnosis(analysis_id, diagnosis, self._build_meta(result))
+        self._storage.save_deepseek_diagnosis(analysis_id, diagnosis, self._build_meta(result, user))
         return diagnosis
 
     def get(self, analysis_id: UUID) -> DeepSeekDiagnosis | None:
         return self._storage.load_deepseek_diagnosis(analysis_id)
 
-    def _build_client(self) -> DeepSeekClient:
-        settings = self._effective_settings()
+    def _build_client(self, user: AuthenticatedUser | None = None) -> DeepSeekClient:
+        settings = self._effective_settings(user)
         if not settings.api_key:
             raise DiagnosisServiceError("diagnosis provider not configured", status_code=503)
         return build_llm_client(settings)
 
-    def _build_meta(self, result: DeepSeekCompletionResult) -> dict[str, object]:
-        settings = self._effective_settings()
+    def _build_meta(self, result: DeepSeekCompletionResult, user: AuthenticatedUser | None = None) -> dict[str, object]:
+        settings = self._effective_settings(user)
         return {
             "provider": settings.provider,
             "model": result.model,
@@ -88,7 +89,10 @@ class DiagnosisService:
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
 
-    def _effective_settings(self):
+    def _effective_settings(self, user: AuthenticatedUser | None = None):
         if self._provider_store is not None:
-            return self._provider_store.get_effective()
+            try:
+                return self._provider_store.get_effective(user)
+            except ProviderConfigStoreError as exc:
+                raise DiagnosisServiceError(str(exc), status_code=exc.status_code) from exc
         return self._settings.to_provider_settings()

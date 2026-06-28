@@ -222,7 +222,7 @@ class _StubDiagnosisService:
     def __init__(self) -> None:
         self.generated = False
 
-    def generate(self, analysis_id):
+    def generate(self, analysis_id, user=None):
         self.generated = True
         return _diagnosis()
 

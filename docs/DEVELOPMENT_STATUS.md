@@ -1,7 +1,7 @@
 # GEO Copilot Development Status
 
 状态：active  
-最后更新：2026-06-25
+最后更新：2026-06-28
 唯一开发状态源：是
 
 ## 1. 使用规则
@@ -48,7 +48,7 @@
 - `GET /api/analyses/{analysis_id}/methods` 已可只读返回 snapshot 中的 `RetrievedMethodPack`
 - `GET /api/analyses/{analysis_id}/strategy` 已可只读返回 snapshot 中的 `StrategyPlan`
 - 当前分析结果以文件快照持久化
-- 当前不依赖数据库落库
+- `DATABASE_URL` 存在时数据库作为 analysis/job/conversation 状态源，snapshot 继续保存大 artifact；未配置数据库时保留 snapshot fallback
 
 ### 4.2 Page Evidence 模块
 
@@ -135,7 +135,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Conversation / GEO Copilot Chat 后端最小闭环：已新增共享 `DeepSeekSettings`、`ConversationSafePack`、`DiagnosisCompactSummary`、`CopilotTurn`、prompt builder、validator、service、`POST /api/analyses/{analysis_id}/messages` 和 `GET /api/analyses/{analysis_id}/messages`；对话层只读取已保存 `safe_prompt_pack.json`、`input_context.json` 和可选 `deepseek_diagnosis.json` 压缩摘要，不读取 raw HTML 或完整 clean markdown；模型 JSON 输出需先通过 `CopilotTurn` Pydantic 校验与业务 validator，合法后才保存 default conversation turn snapshot
 - DeepSeek provider 配置读取：`DeepSeekSettings.from_env()` 当前会优先读取进程环境变量，并在未设置时从仓库根目录 `.env` 读取同名配置；测试只使用临时 `.env` 占位值，不读取或打印真实 API key
 - DeepSeek provider 配置：`.env.example` 已扩展 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`、`DEEPSEEK_TIMEOUT_SECONDS`、`DEEPSEEK_MAX_RETRIES`、`DEEPSEEK_MAX_TOKENS`；当前默认模型配置已改为 `deepseek-v4-pro`
-- 用户自带 LLM provider 配置接口已完成后端最小闭环：新增 `LLMProviderSettings`、`ProviderConfigStore`、`ProviderConfigRequest`、`GET /api/llm/provider`、`PUT /api/llm/provider`、`DELETE /api/llm/provider` 和 `POST /api/llm/provider/test`；当前配置只保存在 API 进程内，不落盘，不向前端回显 API key 明文；`DiagnosisService` 与 `ConversationService` 会从 provider store 动态读取当前配置。当前支持 `deepseek` 与 `openai_compatible`，其中 OpenAI / GLM / Mimo 等兼容 Chat Completions 的服务可走 `openai_compatible`；`anthropic` 因协议不同当前显式返回 422，不冒充已支持。
+- 用户自带 LLM provider 配置接口已补齐产品化地基：新增 `AuthenticatedUserResolver`、`GEO_DEFAULT_USER_ID` / `GEO_DEFAULT_USER_EMAIL` / `GEO_DEFAULT_USER_DISPLAY_NAME`、`GEO_PROVIDER_MASTER_KEY`、`AesGcmSecretCipher`、`SqlAlchemyProviderConfigRepository`、`infra/migrations/0004_provider_config_runtime_settings.sql`，并把 `ProviderConfigStore` 扩展为“匿名请求走进程内 override，已识别用户走数据库 + AES-GCM 密文持久化”的双路径；`DiagnosisService` 与 `ConversationService` 当前都会按请求用户读取同一份有效 provider 配置。当前仍不向前端回显 API key 明文；`openai_compatible` 继续支持兼容 Chat Completions 的 OpenAI / GLM / Mimo 类服务，`anthropic` 因协议不同仍显式返回 422。
 - Testing：已具备 contract、service、parser、geo_signals、rule_checks、lifespan、错误路径测试，并已覆盖 `rdfa`、`opengraph-only`、`navigation-heavy` 场景，以及 snapshot 落盘 / round-trip 回归
 - 新增中文产品页 fixture：`apps/api/tests/fixtures/html/cjk_product_page.html`，并已把 parser、geo_signals、rule_checks、service 的中文页行为固定为正式回归样本
 - 新增中文文档页与中文比较页 fixture：`apps/api/tests/fixtures/html/cjk_docs_howto_page.html`、`apps/api/tests/fixtures/html/cjk_comparison_page.html`，并已把 docs / comparison 场景的 parser、geo_signals、page_content_profile、rule_checks、service 行为固定为正式回归样本
@@ -169,7 +169,15 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Copilot 对话连续追问修复：Conversation prompt 已移除固定 `prioritize_actions` 示例 intent，并要求模型按当前用户问题、allowed intents 与 recent messages 生成差异化中文回答；ConversationService 当前会在模型返回未知引用或引用缺失导致业务校验失败时做安全降级，丢弃未知引用 / 不完整 asset draft，必要时转为 `ask_unknown` 并保存 turn，同时记录 `provider_output_repaired_after_validation_failure` warning，不再让普通对话因模型输出小错直接中断。
 - Copilot 嵌套 JSON 展示修复：Conversation prompt 已明确禁止把 JSON / escaped JSON / CopilotTurn 对象放进 `answer` 字段；ConversationService 当前会在模型把完整 CopilotTurn JSON 错误塞入 `answer` 或普通文本响应中时自动解包，只保存内部自然语言回答，并记录 `answer_contained_nested_json_unwrapped` 或 `provider_returned_nested_json_unwrapped` warning，避免前端把 JSON 原文展示给用户。
 - Copilot 对话模型调用边界已从 Diagnosis JSON 调用中解耦：`DeepSeekClient` 当前同时提供严格 `create_json_completion()` 和自然语言 `create_text_completion()`；Diagnosis / provider test 继续使用 JSON mode、`temperature=0` 和 DeepSeek thinking disabled，Conversation 改用非 JSON mode、`temperature=0.4` 的自然语言调用，再由后端包装为 `CopilotTurn` 并保持 validator / snapshot / 前端 contract 不变。对于自然语言回答缺少显式 refs 的行动类问题，ConversationService 会绑定当前 StrategyPlan 顶部 evidence / method refs，避免因为模型未逐字写 ref 而降级成机械 `ask_unknown`。
-- 商业产品化地基第一步已开始：新增 `apps/api/app/db/models.py` 与 `apps/api/app/db/repositories.py`，定义 `AnalysisRecord`、`JobRecord`、`AnalysisRepository`、`JobRepository`、`SnapshotAnalysisRepository` 和 `SnapshotJobRepository`；当前仍以 snapshot 作为适配器，不引入数据库依赖或改变公开 API。`PageEvidenceService.get_result()` 已改为通过 `AnalysisRepository` 读取；同步 analysis 完成后会写入一个 snapshot-backed `analysis` succeeded job record，作为后续 DB / queue 迁移的最小状态边界。
+- 商业产品化 Postgres 地基已推进：新增 `apps/api/app/db/sqlalchemy_store.py`，引入 `SQLAlchemy` 与 `psycopg[binary]`，提供 `SqlAlchemyAnalysisRepository`、`SqlAlchemyJobRepository` 和 `create_sqlalchemy_engine()`；`DATABASE_URL` 存在时 FastAPI lifespan 会使用 Postgres-backed repository / job repository，snapshot 继续作为 raw HTML、clean markdown 与大 JSON artifact 存储。同步 analysis 完成后会写入 DB analysis index 与 `analysis` succeeded job record；公开 `AnalysisResponse` contract 不变。`DATABASE_URL` 当前支持进程环境变量优先，并在未设置时从仓库 `.env` fallback 读取；测试环境通过 `GEO_DISABLE_DOTENV_DATABASE=1` 避免误连本机数据库。当前本机已创建项目专用 PostgreSQL 数据库 `databaseaigeo` 和登录角色 `databaseaigeo`，`.env` / `.env.example` 已更新到该连接串。
+- `infra/migrations/0001_initial.sql` 已补充商业产品化最小状态表：`workspaces`、`projects`、扩展后的 `analyses`、`jobs`，以及 analysis / job 查询索引。当前仍未把完整 `PageEvidencePack` 关系化，符合“Postgres 保存索引、状态、权限、版本、摘要字段；snapshot 保存大 artifact”的阶段边界。
+- 已新增增量迁移 `infra/migrations/0002_commercial_state.sql`，补齐 Phase A 最小持久状态表 `users`、`conversation_threads`、`messages`、`provider_configs`；消息序号和角色由数据库约束保护，provider secret 只定义密文字段 `api_key_ciphertext`，不提供明文落库字段。对应 SQLAlchemy metadata 已同步，`0001` 已执行环境可通过 `0002` 原地升级。
+- Repository 状态写入边界已收口：`AnalysisRepository.save_record()` 已成为显式 protocol contract，snapshot 与 SQLAlchemy adapter 均实现 queued / running / completed / failed record 持久化；`PageEvidenceService` 已移除 `hasattr(save_record)` 临时能力探测。
+- Job System 最小闭环已实现：新增 `apps/api/app/jobs/service.py` 与 `worker.py`，`JobService` 支持 analysis enqueue、queued/retrying 原子 claim、attempt 计数、succeeded / retrying / failed 状态落库和 terminal analysis failure；PostgreSQL claim 使用 `FOR UPDATE SKIP LOCKED`。`AnalysisJobWorker` 复用预分配 analysis id，避免 job、analysis、snapshot 标识分裂，并可通过 `python -m apps.api.app.jobs` 作为独立 worker 进程运行；现有同步 `POST /api/analyses` 行为保持不变。
+- 异步 analysis job API 已完成最小兼容闭环：新增 `POST /api/analyses/jobs`、`GET /api/analyses/{analysis_id}/jobs/{job_id}`、`POST /api/analyses/{analysis_id}/jobs/{job_id}/retry`；创建返回 202 和 queued job，显式 retry 仅接受 failed / canceled job，并创建新 job 保留旧失败记录。异步 intake 当前只接受 URL 与 language，不静默丢弃 business context；同步 `POST /api/analyses` contract 未改变。
+- Worker lease 恢复已实现：snapshot 与 SQLAlchemy job repository 均支持按 `started_at` 恢复 stale running job；未耗尽 attempts 的任务转为 retrying，耗尽 attempts 的任务转为 failed 并同步 analysis terminal 状态。独立 worker 启动时会先执行一次 15 分钟默认 lease 恢复。
+- 异步 `PageInputContext` 已持久化：`AnalysisRecord` 与 Postgres `analyses.input_context jsonb` 保存完整 URL intake context，异步 API 已开放 business_type、target_keywords、target_audience、conversion_goal、market、brand_facts、forbidden_claims；worker 从 repository 恢复 context 后再调用 Page Evidence，同一 analysis 在进程重启后不会丢失用户目标。增量迁移为 `infra/migrations/0003_analysis_input_context.sql`。
+- Conversation repository 已接入：新增 `SnapshotConversationRepository` 与 `SqlAlchemyConversationRepository`；Postgres 配置存在时，默认 thread 使用稳定 UUID，user / assistant message 以递增 sequence 持久化，assistant `CopilotTurn` 以 JSON 保存，同时继续镜像原有 snapshot conversation artifact。无数据库时沿用 snapshot adapter，现有 Conversation API contract 不变。
 
 ### 4.4 当前契约状态
 
@@ -240,6 +248,12 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `docs/README.md` 已把该前端页面与接口对接方案加入正式阅读入口。
 - `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 已新增并完成二次审计优化，用作面向 80% 商业产品完成度的重构方案；当前结论是保留现有 PageEvidence / RuleChecks / MethodSelector / SafePromptPack 等确定性 GEO 资产，先补 Postgres、任务队列、Repository、LLM provider gateway、观测评测、报告 UI、资产导出和项目 / 站点级产品地基，再增量引入 LangGraph 作为多步工作流编排层；Pydantic AI 可作为 LLM gateway 内部结构化调用 / eval 候选，但不替代 LangGraph 的长流程状态职责；不建议全量重写成 LangChain Agent 或用通用聊天 / RAG 平台替换主链路。
 - `docs/README.md` 已把该商业产品化重构与 Agent 架构方案加入正式阅读入口。
+- 顶层正式文档已完成一次产品化收敛：`docs/README.md` 当前明确区分“永久主文档 / 模块补充文档 / 归档文档”，并新增按实现、产品化、知识库、前端等不同任务场景的推荐阅读路径。
+- `docs/GEO项目总纲.md` 当前已重写为长期产品宪法，聚焦产品定义、五条 GEO 主轴、长期不变量、核心领域对象、产品承诺边界和演进模型，不再重复维护阶段性实现状态。
+- `docs/GEO实施路线与架构决策.md` 当前已重写为正式系统蓝图，聚焦分层模型、核心上下文、数据所有权、工作流边界、公开 contract 策略和 Phase A-E 演进路线，不再保留早期“仅 Page Evidence 阶段”的顶层叙述。
+- `docs/GEO架构技术栈与工具整合建议.md` 当前已重写为技术选型门禁，明确各层批准技术栈、LangGraph / LangChain / Pydantic AI / Playwright / pgvector / LlamaIndex / Dify 等候选的正确位置、采用条件和拒绝条件。
+- `docs/GEO五人团队分工协作与验收标准.md` 当前已重写为长期协作规范，按 Product API、Domain Engine、Workflow / State、LLM / Evaluation、Frontend / Report 五个工作流定义责任、变更类型、DoD 和验收车道。
+- `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 当前状态已调整为 `active-design`，并新增“本文档角色”部分，明确其作为长期产品化与工作流升级的补充设计，不替代 `DEVELOPMENT_STATUS.md`、`GEO项目总纲.md` 或 `GEO实施路线与架构决策.md`。
 
 当前文档口径：
 
@@ -256,6 +270,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - 前端页面与接口对接当前正式口径是 `GEO Copilot Workbench v0`：当前 `apps/web` 已完成 URL / upload analysis、methods、strategy、diagnosis、非流式 messages 和 LLM provider config 的前端接口 / 数据 / 功能层最小闭环；下一步只在该基线上收口 HTML/CSS 页面呈现、响应式、错误态、真实后端浏览器联调和前端 smoke。前端不读取 `snapshot_dir` 本地文件，不直接调用 DeepSeek，不渲染 raw HTML，并且不把完整报告页、RAG、流式响应、账号系统或可发布 Copilot actions 纳入 v0。
 - PageEvidence heuristic 优化当前正式口径是先新增内部可解释 trace / feature vector 和 page type candidate score，再用真实 fixture calibration / holdout 防过拟合；目标是在不改变公开 contract 的前提下修复 CNN / Apple / Stripe 暴露的大型首页、产品家族页、定价页误判风险。当前仅完成方案文档，尚未改 heuristic 代码。
 - 商业产品化重构当前正式口径是 `先产品化地基，再 LangGraph 增量引入 + 保留确定性 GEO 引擎`：LangGraph 只作为 AnalyzePageGraph / DiagnosisGraph / CopilotGraph / ReportGraph 等工作流运行时，不替代 PageEvidence、RuleChecks、MethodSelector、SafePromptPack 或 validator；Pydantic AI 只作为 LLMProviderGateway 内部结构化调用 / eval 候选；LangChain / LlamaIndex / Crawl4AI / Firecrawl / llms.txt 相关工具只按边界作为模型适配、研究知识库、抓取 fallback 或资产产物参考。当前方案新增工程质量门禁、作业状态机、数据所有权、产品边界、反方案和技术选择门禁，明确不追求一次性完美架构。
+- 当前正式文档治理口径是：`DEVELOPMENT_STATUS.md` 只维护当前已验证事实；`README.md` 只维护文档信息架构与阅读路径；顶层主文档只维护长期产品定义、系统蓝图、技术门禁和协作规则；模块补充文档只维护专项设计，不再重复维护当前完成度。
 
 ## 5. 当前边界
 
@@ -329,6 +344,8 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - `Test-Path -LiteralPath 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
 - `rg -n "商业产品化重构与Agent架构方案|LangGraph 增量引入|80% 商业产品|AnalyzePageGraph|LLMProviderGateway|GEO Optimizer" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
 - `rg -n "Pydantic AI|作业状态机|数据所有权|工程质量门禁|技术选择门禁|反方案" 'E:\vibe coding\geo项目\docs\DEVELOPMENT_STATUS.md' 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
+- `rg -n "永久主文档|Evidence-first GEO Product Workbench|Application Use Cases|provider-neutral gateway|本文件角色" 'E:\vibe coding\geo项目\docs\README.md' 'E:\vibe coding\geo项目\docs\GEO项目总纲.md' 'E:\vibe coding\geo项目\docs\GEO实施路线与架构决策.md' 'E:\vibe coding\geo项目\docs\GEO架构技术栈与工具整合建议.md' 'E:\vibe coding\geo项目\docs\模块开发补充\商业产品化重构与Agent架构方案.md'`
+- `git -C 'E:\vibe coding\geo项目' diff --check -- 'docs/README.md' 'docs/GEO项目总纲.md' 'docs/GEO实施路线与架构决策.md' 'docs/GEO架构技术栈与工具整合建议.md' 'docs/GEO五人团队分工协作与验收标准.md' 'docs/模块开发补充/商业产品化重构与Agent架构方案.md'`
 
 最新验证结果：
 
@@ -352,7 +369,21 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - Copilot 嵌套 JSON 展示修复验证：`python -m pytest apps/api/tests/test_conversations.py` 为 8 passed；`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 19 passed；`npm --workspace apps/web run typecheck` 通过；`npm --workspace apps/web run build` 通过。
 - Copilot 自然语言调用边界修复验证：`python -m pytest apps/api/tests/test_conversations.py apps/api/tests/test_deepseek_client.py` 为 16 passed；`python -m pytest apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 21 passed；`python -m pytest` 为 103 passed；`git diff --check` 未报告错误。
 - 提交前后端审计验证：`python -m pytest apps/api/tests/test_conversations.py apps/api/tests/test_deepseek_client.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_diagnosis_service.py` 为 19 passed；`python -m pytest` 为 97 passed；`git diff --check` 未报告错误；敏感词扫描仅命中文档占位、测试假 key、字段名和 fixture 文本，未发现真实 secret。
-- 商业产品化地基第一步验证：`python -m pytest apps/api/tests/test_analysis_repository.py apps/api/tests/test_page_evidence_service.py apps/api/tests/test_contract.py` 为 33 passed；`git diff --check` 未报告错误；`python -m pytest` 为 101 passed。
+- 商业产品化 Postgres 地基验证：`python -m pip install -r apps\api\requirements.txt` 成功安装 `SQLAlchemy==2.0.45` 与 `psycopg[binary]==3.3.2`；`python -m pytest apps\api\tests\test_analysis_repository.py apps\api\tests\test_page_evidence_service.py apps\api\tests\test_contract.py` 为 34 passed；新增 `DATABASE_URL` `.env` fallback 测试后，`python -m pytest apps\api\tests\test_database_settings.py apps\api\tests\test_analysis_repository.py` 为 7 passed；最终 `python -m pytest` 为 107 passed；`git diff --check` 未报告错误。
+- Phase A 商业状态 schema 验证：`python -m pytest apps/api/tests/test_analysis_repository.py apps/api/tests/test_database_settings.py` 为 9 passed；`infra/migrations/0002_commercial_state.sql` 已在本机项目 PostgreSQL 执行成功，查询确认 `users`、`conversation_threads`、`messages`、`provider_configs` 四表以及 `uq_messages_thread_sequence`、`uq_provider_configs_user_provider` 两个唯一约束存在；最终 `python -m pytest` 为 108 passed，`git diff --check` 未报告错误。
+- Provider config 持久化地基验证：`python -m pytest apps/api/tests/test_llm_provider_api.py apps/api/tests/test_provider_config_persistence.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 19 passed；随后 `python -m pytest apps/api/tests/test_analysis_repository.py apps/api/tests/test_llm_settings.py apps/api/tests/test_contract.py apps/api/tests/test_database_settings.py apps/api/tests/test_llm_provider_api.py apps/api/tests/test_provider_config_persistence.py apps/api/tests/test_diagnosis_service.py apps/api/tests/test_conversations.py` 为 42 passed；`python -m compileall -q apps/api/app` 通过。新增测试已确认请求头身份优先于默认身份、`GEO_PROVIDER_MASTER_KEY` 可从 `.env` 读取 32-byte base64 主密钥、已识别用户的 provider 配置会以 AES-GCM 密文保存到 SQLite 仓储并被 `/api/llm/provider`、Diagnosis、Conversation 同步读取；缺少主密钥时，已识别用户的持久化写入会返回 503 而不是退回伪共享用户或明文持久化。
+- Provider config PostgreSQL 集成验证：新增可选集成测试 `apps/api/tests/test_provider_config_postgres_integration.py`，通过 `GEO_POSTGRES_INTEGRATION_URL=postgresql://... python -m pytest apps/api/tests/test_provider_config_postgres_integration.py -q` 执行，结果 1 passed；测试会在真实 Postgres 上执行 `0004_provider_config_runtime_settings.sql`、写入 AES-GCM 密文 provider config，并验证 `DiagnosisService.generate(..., user)` 与 `ConversationService.create_turn(..., user)` 均会从同一条 Postgres-backed provider 配置读取 `max_tokens`。本机手工 smoke 额外返回 `PERSISTED=True PROVIDER=openai_compatible TOKENS=2222 ENCRYPTED=True`，并已清理测试用户与 provider row。
+- Provider config 真实 provider smoke 基线：新增可选 smoke `apps/api/tests/test_provider_config_real_provider_smoke.py`；默认未设置 `GEO_REAL_PROVIDER_SMOKE=1` 时会 skip，避免在常规回归中误触发外部模型调用。当前在本机用 `GEO_REAL_PROVIDER_SMOKE=1`、`GEO_POSTGRES_INTEGRATION_URL=postgresql://...` 并以进程级临时测试 key 覆盖 `DEEPSEEK_API_KEY` 后，`python -m pytest apps/api/tests/test_provider_config_real_provider_smoke.py -q` 为 1 passed；随后手工 smoke 返回 `REAL_PROVIDER_STATUS=passed DIAG_SCORE=50 DIAG_ISSUES=1 TURN_INTENT=prioritize_actions TURN_ANSWER_LEN=360`。这确认“数据库持久化配置 -> 服务层读取 -> 真实 DeepSeek Diagnosis / Conversation 调用”链路已通过一次真实 provider 验证。历史上默认 `.env` 凭证曾返回 `401`，说明 provider 可用性仍受当前环境凭证状态影响，但不再是持久化链路阻塞。
+- Repository / Job System 聚焦验证：`python -m pytest apps/api/tests/test_job_service.py apps/api/tests/test_analysis_repository.py apps/api/tests/test_page_evidence_service.py apps/api/tests/test_contract.py` 为 40 passed；本机 PostgreSQL enqueue / claim / succeed smoke 返回 `QUEUED=queued COMPLETED=succeeded ATTEMPTS=1`，smoke 数据已清理；`python -m compileall -q apps/api/app/jobs apps/api/app/db` 通过，最终 `python -m pytest` 为 113 passed，`git diff --check` 未报告错误。
+- 异步 API / recovery 聚焦验证：`python -m pytest apps/api/tests/test_job_service.py apps/api/tests/test_job_api.py apps/api/tests/test_contract.py apps/api/tests/test_analysis_repository.py` 为 28 passed；本机 PostgreSQL 双线程并发 claim + stale recovery smoke 返回 `CLAIMS=1 RECOVERED=1 STATUS=retrying`，确认同一 queued job 仅被一个 worker 领取，smoke 数据已清理；`python -m compileall -q apps/api/app/jobs apps/api/app/db apps/api/app/routers` 通过，最终 `python -m pytest` 为 118 passed，`git diff --check` 未报告错误。
+- PostgreSQL Job 集成验证：新增可选集成测试 `apps/api/tests/test_job_postgres_integration.py`；默认未设置 `GEO_POSTGRES_INTEGRATION_URL` 时 skip，设置后 `python -m pytest apps/api/tests/test_job_postgres_integration.py -q` 为 1 passed。该测试会在真实 Postgres 上创建 queued analysis job，用两个独立 repository/connection 并发执行 `claim_next("analysis")`，确认同一 queued job 只会被一个 consumer 成功领取；随后再用第二个 `JobService` 实例执行 `recover_stale_analysis_jobs()`，确认 stale running job 会被 durable 地恢复为 `retrying`，对应 analysis record 回到 `queued`。这条验证已覆盖“worker 进程重启后由新实例接管 stale recovery”的最小恢复场景。
+- 异步 context 持久化验证：`python -m pytest apps/api/tests/test_job_service.py apps/api/tests/test_job_api.py apps/api/tests/test_analysis_repository.py apps/api/tests/test_page_evidence_service.py` 为 34 passed；`infra/migrations/0003_analysis_input_context.sql` 已在本机 PostgreSQL 执行，使用两个独立 repository 实例 round-trip 返回 `CONTEXT_RESTORED=True BUSINESS_TYPE=b2b_saas KEYWORDS=1`，smoke 数据已清理；最终 `python -m pytest` 为 119 passed，`git diff --check` 未报告错误。
+- Conversation repository 验证：`python -m pytest apps/api/tests/test_conversation_repository.py apps/api/tests/test_conversations.py apps/api/tests/test_contract.py` 为 22 passed；本机 PostgreSQL 跨 repository 实例 round-trip 返回 `MESSAGES=2 TURNS=1 ROLES=user/assistant`，smoke 数据已清理；`python -m compileall -q apps/api/app/conversations apps/api/app/jobs apps/api/app/db apps/api/app/routers` 通过，最终 `python -m pytest` 为 120 passed，`git diff --check` 未报告错误。
+- 本机 Postgres 接入验证：Windows 服务 `postgresql-x64-18` 正在运行，服务路径为 `E:\PostgreSQL 18\bin\pg_ctl.exe`，data 目录为 `E:\PostgreSQL 18\data`；`pg_isready -h localhost -p 5432` 返回 accepting connections；`postgresql.conf` 显示监听 `5432`，`pg_hba.conf` 对本地连接要求 `scram-sha-256`。已临时备份并短暂调整本地 `pg_hba.conf` 完成 bootstrap，随后恢复原 `scram-sha-256` 认证配置；新角色 `databaseaigeo` 可用密码连接 `databaseaigeo` 数据库，`postgres` 无密码连接不再可用。
+- 真实 Postgres smoke：`infra/migrations/0001_initial.sql` 已在 `databaseaigeo` 库完整执行成功；`PageEvidenceService` 使用 `SqlAlchemyAnalysisRepository` / `SqlAlchemyJobRepository` 和 fixture HTML 完成 DB-backed analysis smoke，结果 `SERVICE_STATUS completed`，analysis id `7c7f0e2b-b4f5-4f49-b537-d816ba1683cb`，`DB_RECORD_OK True`，`DB_JOBS 1`。
+- Provider config 真实 Postgres migration / schema 验证：`E:\PostgreSQL 18\bin\psql.exe postgresql://databaseaigeo:***@localhost:5432/databaseaigeo -v ON_ERROR_STOP=1 -f infra/migrations/0004_provider_config_runtime_settings.sql` 成功返回 3 个 `ALTER TABLE`；随后查询确认 `provider_configs` 当前含 `timeout_seconds:double precision`、`max_retries:integer`、`max_tokens:integer`、`api_key_ciphertext:text` 四个关键列，且索引仍为 `provider_configs_pkey`、`uq_provider_configs_user_provider`、`idx_provider_configs_user`
+- PostgreSQL 扩展与依赖验证：已从 pgvector 官方仓库固定 `v0.8.2`，使用本机 Visual Studio 2022 C++ Build Tools 为 PostgreSQL 18 编译安装，并在 `databaseaigeo` 库启用 `vector 0.8.2`；临时 `vector(3)` 表的 L2 距离查询成功。`python -m pip install -r apps\api\requirements.txt` 再次执行成功，当前声明依赖均已满足。项目角色继续保持非超级用户，临时 bootstrap 认证配置已恢复，`postgres` 无密码连接返回 `fe_sendauth: no password supplied`，活动 `pg_hba.conf` 无本轮 trust 规则残留。
+- 迁移兼容性口径：虽然本机已具备 `vector` 扩展，当前仍明确不优先 pgvector / hybrid retrieval；`infra/migrations/0001_initial.sql` 不增加 `CREATE EXTENSION` 超级用户前置条件，`method_chunks.embedding` 暂用 `double precision[]`，避免基础 Postgres 状态库初始化依赖可选扩展。
 - Web browser smoke（前端覆盖前记录）：`http://localhost:3000` 桌面 1440x1000 首屏通过，包含 `页面分析工作台`、模型配置和 Evidence 面板，无横向溢出；移动 375x900 输入 / 对话 / 证据 tab 可切换，证据 tab 可展示页面摘要与规则检查空态，无横向溢出。使用上传 UI 分析 `cjk_product_page.html` 成功返回 completed analysis，状态栏 1 个、rule cards 23 个，summary / rules / methods / strategy 均展示。浏览器仅观察到 favicon / missing diagnosis snapshot 404，不影响页面运行。
 - Safe Prompt / Conversation 定位反馈回归：`python -m pytest apps/api/tests/test_safe_prompt_pack.py apps/api/tests/test_conversations.py apps/api/tests/test_diagnosis_prompt.py apps/api/tests/test_diagnosis_validator.py`，14 passed；新增测试确认 safe prompt 会为 claim candidate 生成带原文 text 的 `claim_candidate` excerpt。
 - DeepSeek provider smoke test：使用本地已有配置中的 `deepseek-v4-pro`，基于最小 safe prompt snapshot 触发 `DiagnosisService.generate()`；结果 `SMOKE_STATUS=passed`，analysis id `52255559-0720-46a1-9b9b-59ccde149fd7`，`geo_score=50`，`issues=1`，`priority_actions=1`，`asset_drafts=0`，`unknowns=1`，并成功保存 `deepseek_diagnosis_meta.json`
@@ -366,6 +397,7 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 - 前端页面与接口对接方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/前端页面与接口对接开发方案.md` 均包含方案入口、`ready-for-frontend-page-implementation`、`GEO Copilot Workbench`、当前已完成 / 未完成状态、真实后端浏览器联调和前端 smoke 口径
 - 商业产品化重构与 Agent 架构方案文档验证：`Test-Path` 返回 `True`；`rg` 已确认 `docs/README.md`、`docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 均包含方案入口、`LangGraph 增量引入`、`80% 商业产品`、`AnalyzePageGraph`、`LLMProviderGateway` 和 `GEO Optimizer` 口径
 - 商业产品化重构二次审计验证：`rg` 已确认 `docs/DEVELOPMENT_STATUS.md` 和 `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 均包含 `Pydantic AI`、`作业状态机`、`数据所有权`、`工程质量门禁`、`技术选择门禁` 和 `反方案` 口径
+- 顶层文档治理收敛验证：`rg` 已确认 `docs/README.md`、`docs/GEO项目总纲.md`、`docs/GEO实施路线与架构决策.md`、`docs/GEO架构技术栈与工具整合建议.md` 和 `docs/模块开发补充/商业产品化重构与Agent架构方案.md` 已分别落入“文档分层入口 / 产品宪法 / 系统蓝图 / 技术选型门禁 / 补充设计角色”五个稳定口径；`git diff --check -- docs/...` 未报告本轮文档的 trailing whitespace 或 patch 格式错误，仅输出工作区 LF/CRLF warning。
 
 当前测试已覆盖：
 
@@ -426,21 +458,24 @@ Conversation / GEO Copilot Chat 后端最小闭环已实现目录：
 当前风险：
 
 - 最小稳定公开子集已冻结，但完整 `PageContentProfile` 仍属内部对象；后续如需公开更多字段，应使用新增字段或版本化方式，避免破坏当前 contract
-- 当前 DeepSeek diagnosis 显式模型调用边界和 Conversation 后端最小闭环均已通过至少一次真实 provider smoke test；现有 smoke test 仍只代表最小样本和 CNN excerpt 样本，尚不能代表真实页面诊断 / 对话质量、限流表现或长输入稳定性
+- 当前 DeepSeek diagnosis 显式模型调用边界、Conversation 后端最小闭环，以及“持久化 Postgres provider 配置 -> 真实 DeepSeek 调用”路径均已通过至少一次真实 provider smoke test；但现有通过样本仍只代表最小 safe prompt 样本、CNN excerpt 样本和临时测试 key 样本，尚不能代表真实页面诊断 / 对话质量、限流表现、凭证长期稳定性或长输入稳定性
 - 用户自带 LLM provider 配置当前为进程内 override，重启 API 后会恢复 `.env` 默认配置；当前不做多用户隔离、加密落库或账号级持久化。`openai_compatible` 依赖目标服务兼容 `/chat/completions` 与 JSON object response；Anthropic 尚未适配。
 - 当前方法卡为 v0 seed，覆盖当前 P0 rule mapping；后续新增规则或方法时必须继续通过 compiler coverage 测试
 - 抓取层虽已完成一次性能优化，但当前仍缺浏览器渲染 fallback、重复分析结果缓存和更真实中文站点压力样本
 - 中文页面的产品页 / 文档页 / 比较页已进入正式 fixture 回归，但更真实的中文站点 HTML 仍不足
 - 当前真实 excerpt 已覆盖 Shopify / Ahrefs / Moz / CNN / Apple / Stripe / Wikipedia / CDC；样本量仍不足以完成 page type heuristic 权重重调，且 CNN / Apple / Stripe 样本已暴露大型首页、消费电子产品/分类页和定价页的 page type 误判风险
 - 是否需要动态 fallback provider 仍未有样本证据支撑；如后续引入，应放在当前 fetcher/service 边界之后并保持公开 contract 不变
+- Postgres-backed repository 已有 SQLite 兼容单元测试、完整后端回归和本机 PostgreSQL 18 真实写入 smoke。当前仍未把完整 `PageEvidencePack` 关系化，snapshot 仍是大 artifact 存储；本机已安装并启用 `vector 0.8.2`，后续如正式引入 pgvector，仍需通过单独迁移恢复向量列类型并增加对应 query/index 回归测试。
+- Provider 配置当前已具备“显式身份 + 32-byte 主密钥 + AES-GCM 密文持久化”基础实现，并已完成 SQLite、本机 PostgreSQL，以及一次真实 DeepSeek provider 路径验证；后续仍需把这条 smoke 收敛为可重复的运维脚本或 CI 手册步骤，并补更长输入样本
+- 当前 authenticated user 仍是最小产品化边界：通过请求头或 `.env` 默认身份注入，而不是完整账号体系；在正式引入鉴权前，只有显式提供身份的请求会进入数据库持久化路径，匿名请求仍保留进程内 override 兼容模式
 
 ## 8. 下一阶段
 
 下一阶段只做以下工作：
 
-1. 使用真实或更接近真实页面 snapshot 补充 CopilotTurn fake / provider 质量样本，覆盖解释、优先级建议、草案生成和 request_evidence
-2. 扩展 Conversation validator 的资产草案与 unsupported claim 场景回归，保持 evidence_refs / method_refs fail closed
-3. 基于已完成的前端接口 / 数据 / 功能层，继续做视觉精修、真实后端浏览器联调、前端自动化 smoke、移动端验收和 provider 错误态样本补充
+1. 为 conversation repository 增加 PostgreSQL 并发 sequence 与 snapshot mirror 失败策略测试
+2. 把真实 provider smoke 收敛为可重复的运维脚本或 CI 手册步骤，并补一组更接近真实页面长度的持久化配置 smoke 样本
+3. 把 job worker 启动期 `recover_stale_analysis_jobs()` 行为补成显式测试样本，覆盖 `AnalysisJobWorker.run_forever()` 的恢复入口
 
 完成这些之前，不进入：
 
